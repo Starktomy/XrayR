@@ -5,7 +5,6 @@ import (
 	"os"
 	"os/signal"
 	"path"
-	"runtime"
 	"strings"
 	"syscall"
 	"time"
@@ -59,7 +58,7 @@ func getConfig() *viper.Viper {
 	}
 
 	if err := config.ReadInConfig(); err != nil {
-		log.Panicf("Config file error: %s \n", err)
+		log.Fatalf("Config file error: %s \n", err)
 	}
 
 	config.WatchConfig() // Watch the config
@@ -88,29 +87,30 @@ func run() error {
 			// Hot reload function
 			fmt.Println("Config file changed:", e.Name)
 			p.Close()
-			// Delete old instance and trigger GC
-			runtime.GC()
 			if err := config.Unmarshal(panelConfig); err != nil {
-				log.Panicf("Parse config file %v failed: %s \n", cfgFile, err)
+				log.Errorf("Parse config file %v failed: %s \n", cfgFile, err)
+				return
 			}
 
 			if panelConfig.LogConfig.Level == "debug" {
 				log.SetReportCaller(true)
 			}
 
-			p.Start()
+			if err := p.Start(); err != nil {
+				log.Errorf("Reload failed: %s", err)
+			}
 			lastTime = time.Now()
 		}
 	})
 
-	p.Start()
+	if err := p.Start(); err != nil {
+		return err
+	}
 	defer p.Close()
 
-	// Explicitly triggering GC to remove garbage from config loading.
-	runtime.GC()
-	// Running backend
+	// Running backend — wait for SIGINT/SIGTERM (os.Kill can't be caught).
 	osSignals := make(chan os.Signal, 1)
-	signal.Notify(osSignals, os.Interrupt, os.Kill, syscall.SIGTERM)
+	signal.Notify(osSignals, os.Interrupt, syscall.SIGTERM)
 	<-osSignals
 
 	return nil
