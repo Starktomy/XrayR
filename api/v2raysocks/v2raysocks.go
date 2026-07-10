@@ -37,6 +37,26 @@ type APIClient struct {
 	ConfigResp    *simplejson.Json
 	access        sync.Mutex
 	eTags         map[string]string
+	eTagMu        sync.Mutex
+}
+
+// getETag returns the cached ETag for resource under c.eTagMu.
+func (c *APIClient) getETag(resource string) string {
+	c.eTagMu.Lock()
+	defer c.eTagMu.Unlock()
+	return c.eTags[resource]
+}
+
+// setETag stores the ETag for resource under c.eTagMu if it differs.
+func (c *APIClient) setETag(resource, value string) {
+	if value == "" {
+		return
+	}
+	c.eTagMu.Lock()
+	defer c.eTagMu.Unlock()
+	if c.eTags[resource] != value {
+		c.eTags[resource] = value
+	}
 }
 
 // New create an api instance
@@ -160,7 +180,7 @@ func (c *APIClient) GetNodeInfo() (nodeInfo *api.NodeInfo, err error) {
 		return nil, fmt.Errorf("unsupported Node type: %s", c.NodeType)
 	}
 	res, err := c.client.R().
-		SetHeader("If-None-Match", c.eTags["config"]).
+		SetHeader("If-None-Match", c.getETag("config")).
 		SetQueryParams(map[string]string{
 			"act":       "config",
 			"node_type": nodeType,
@@ -173,8 +193,8 @@ func (c *APIClient) GetNodeInfo() (nodeInfo *api.NodeInfo, err error) {
 		return nil, errors.New(api.NodeNotModified)
 	}
 	// update etag
-	if res.Header().Get("Etag") != "" && res.Header().Get("Etag") != c.eTags["config"] {
-		c.eTags["config"] = res.Header().Get("Etag")
+	if res.Header().Get("Etag") != "" && res.Header().Get("Etag") != c.getETag("config") {
+		c.setETag("config", res.Header().Get("Etag"))
 	}
 
 	response, err := c.parseResponse(res, "", err)
@@ -214,7 +234,7 @@ func (c *APIClient) GetUserList() (UserList *[]api.UserInfo, err error) {
 		return nil, fmt.Errorf("unsupported Node type: %s", c.NodeType)
 	}
 	res, err := c.client.R().
-		SetHeader("If-None-Match", c.eTags["user"]).
+		SetHeader("If-None-Match", c.getETag("user")).
 		SetQueryParams(map[string]string{
 			"act":       "user",
 			"node_type": nodeType,
@@ -227,8 +247,8 @@ func (c *APIClient) GetUserList() (UserList *[]api.UserInfo, err error) {
 		return nil, errors.New(api.UserNotModified)
 	}
 	// update etag
-	if res.Header().Get("Etag") != "" && res.Header().Get("Etag") != c.eTags["user"] {
-		c.eTags["user"] = res.Header().Get("Etag")
+	if res.Header().Get("Etag") != "" && res.Header().Get("Etag") != c.getETag("user") {
+		c.setETag("user", res.Header().Get("Etag"))
 	}
 
 	response, err := c.parseResponse(res, "", err)

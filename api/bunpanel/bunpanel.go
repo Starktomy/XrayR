@@ -34,6 +34,26 @@ type APIClient struct {
 	LastReportOnline map[int]int
 	access           sync.Mutex
 	eTags            map[string]string
+	eTagMu           sync.Mutex
+}
+
+// getETag returns the cached ETag for resource under c.eTagMu.
+func (c *APIClient) getETag(resource string) string {
+	c.eTagMu.Lock()
+	defer c.eTagMu.Unlock()
+	return c.eTags[resource]
+}
+
+// setETag stores the ETag for resource under c.eTagMu if it differs.
+func (c *APIClient) setETag(resource, value string) {
+	if value == "" {
+		return
+	}
+	c.eTagMu.Lock()
+	defer c.eTagMu.Unlock()
+	if c.eTags[resource] != value {
+		c.eTags[resource] = value
+	}
 }
 
 // ReportIllegal implements api.API.
@@ -161,7 +181,7 @@ func (c *APIClient) GetNodeInfo() (nodeInfo *api.NodeInfo, err error) {
 	path := fmt.Sprintf("/v2/server/%d/get", c.NodeID)
 	res, err := c.client.R().
 		SetResult(&Response{}).
-		SetHeader("If-None-Match", c.eTags["node"]).
+		SetHeader("If-None-Match", c.getETag("node")).
 		ForceContentType("application/json").
 		Get(path)
 	// Etag identifier for a specific version of a resource. StatusCode = 304 means no changed
@@ -169,8 +189,8 @@ func (c *APIClient) GetNodeInfo() (nodeInfo *api.NodeInfo, err error) {
 		return nil, errors.New(api.NodeNotModified)
 	}
 
-	if res.Header().Get("ETag") != "" && res.Header().Get("ETag") != c.eTags["node"] {
-		c.eTags["node"] = res.Header().Get("ETag")
+	if res.Header().Get("ETag") != "" && res.Header().Get("ETag") != c.getETag("node") {
+		c.setETag("node", res.Header().Get("ETag"))
 	}
 
 	response, err := c.parseResponse(res, path, err)
@@ -202,7 +222,7 @@ func (c *APIClient) GetUserList() (UserList *[]api.UserInfo, err error) {
 	path := "/v2/user/get"
 	res, err := c.client.R().
 		SetQueryParam("serverId", strconv.Itoa(c.NodeID)).
-		SetHeader("If-None-Match", c.eTags["users"]).
+		SetHeader("If-None-Match", c.getETag("users")).
 		SetResult(&Response{}).
 		ForceContentType("application/json").
 		Get(path)
@@ -211,8 +231,8 @@ func (c *APIClient) GetUserList() (UserList *[]api.UserInfo, err error) {
 		return nil, errors.New(api.UserNotModified)
 	}
 
-	if res.Header().Get("ETag") != "" && res.Header().Get("ETag") != c.eTags["users"] {
-		c.eTags["users"] = res.Header().Get("ETag")
+	if res.Header().Get("ETag") != "" && res.Header().Get("ETag") != c.getETag("users") {
+		c.setETag("users", res.Header().Get("ETag"))
 	}
 
 	response, err := c.parseResponse(res, path, err)
