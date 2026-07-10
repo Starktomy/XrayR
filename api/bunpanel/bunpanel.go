@@ -137,7 +137,7 @@ func readLocalRuleList(path string) (LocalRuleList []api.DetectRule) {
 		}
 		// handle first encountered error while reading
 		if err := fileScanner.Err(); err != nil {
-			log.Fatalf("Error while reading file: %s", err)
+			log.Errorf("Error while reading rule list %s: %s", path, err)
 			return
 		}
 	}

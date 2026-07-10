@@ -83,6 +83,7 @@ func readLocalRuleList(path string) (LocalRuleList []api.DetectRule) {
 			log.Printf("Error when opening file: %s", err)
 			return LocalRuleList
 		}
+		defer file.Close()
 
 		fileScanner := bufio.NewScanner(file)
 
@@ -93,13 +94,12 @@ func readLocalRuleList(path string) (LocalRuleList []api.DetectRule) {
 				Pattern: regexp.MustCompile(fileScanner.Text()),
 			})
 		}
-		// handle first encountered error while reading
+		// handle first encountered error while reading.
+		// Log and continue: a single bad line should not bring
+		// down the whole node.
 		if err := fileScanner.Err(); err != nil {
-			log.Fatalf("Error while reading file: %s", err)
-			return
+			log.Errorf("Error while reading rule list %s: %s", path, err)
 		}
-
-		file.Close()
 	}
 
 	return LocalRuleList
