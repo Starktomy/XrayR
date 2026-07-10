@@ -1,4 +1,4 @@
-module github.com/XrayR-project/XrayR
+module github.com/Starktomy/XrayR
 
 go 1.25.6
 

@@ -27,9 +27,9 @@ import (
 	"github.com/xtls/xray-core/transport"
 	"github.com/xtls/xray-core/transport/pipe"
 
-	xrcommon "github.com/XrayR-project/XrayR/common"
-	"github.com/XrayR-project/XrayR/common/limiter"
-	"github.com/XrayR-project/XrayR/common/rule"
+	xrcommon "github.com/Starktomy/XrayR/common"
+	"github.com/Starktomy/XrayR/common/limiter"
+	"github.com/Starktomy/XrayR/common/rule"
 )
 
 var errSniffingTimeout = newError("timeout on sniffing")
