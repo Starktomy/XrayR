@@ -15,6 +15,7 @@ import (
 	"github.com/xtls/xray-core/transport"
 
 	"github.com/XrayR-project/XrayR/api"
+	xrcommon "github.com/XrayR-project/XrayR/common"
 	"github.com/XrayR-project/XrayR/common/limiter"
 )
 
@@ -31,10 +32,9 @@ type statsOutboundWrapper struct {
 }
 
 func (w *statsOutboundWrapper) Dispatch(ctx context.Context, link *transport.Link) {
-	// Disable kernel splice to avoid Vision/REALITY bypassing userland stats path
-	if sess := session.InboundFromContext(ctx); sess != nil {
-		sess.CanSpliceCopy = 3
-	}
+	// Disable kernel splice to avoid Vision/REALITY bypassing userland stats path.
+	// Uses the shared helper so the dispatcher and outbound paths stay in sync.
+	xrcommon.DisableSpliceCopyForbid(session.InboundFromContext(ctx))
 	w.Handler.Dispatch(ctx, link)
 }
 

@@ -27,6 +27,7 @@ import (
 	"github.com/xtls/xray-core/transport"
 	"github.com/xtls/xray-core/transport/pipe"
 
+	xrcommon "github.com/XrayR-project/XrayR/common"
 	"github.com/XrayR-project/XrayR/common/limiter"
 	"github.com/XrayR-project/XrayR/common/rule"
 )
@@ -179,10 +180,12 @@ func (d *DefaultDispatcher) getLink(ctx context.Context) (*transport.Link, *tran
 	sessionInbound := session.InboundFromContext(ctx)
 	var user *protocol.MemoryUser
 	if sessionInbound != nil {
-		// Disable splice to avoid Vision/REALITY bypassing stats path
-		sessionInbound.CanSpliceCopy = 3
+		// Disable splice to avoid Vision/REALITY bypassing stats path.
+		// Mirrored in service/controller/control.go's statsOutboundWrapper
+		// via the shared xrcommon.DisableSpliceCopyForbid helper so that
+		// future splice-policy changes only need to be made in one place.
+		xrcommon.DisableSpliceCopyForbid(sessionInbound)
 		user = sessionInbound.User
-		sessionInbound.CanSpliceCopy = 3
 	}
 
 	if user != nil && len(user.Email) > 0 {
