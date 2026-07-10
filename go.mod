@@ -13,7 +13,7 @@ require (
 	github.com/eko/gocache/store/redis/v4 v4.2.1
 	github.com/fsnotify/fsnotify v1.7.0
 	github.com/go-acme/lego/v4 v4.16.1
-	github.com/go-resty/resty/v2 v2.13.1
+	github.com/go-resty/resty/v2 v2.17.2
 	github.com/gogf/gf/v2 v2.7.0
 	github.com/patrickmn/go-cache v2.1.0+incompatible
 	github.com/r3labs/diff/v2 v2.15.1
@@ -28,7 +28,7 @@ require (
 	github.com/xtls/xray-core v1.251015.0
 	golang.org/x/crypto v0.43.0
 	golang.org/x/net v0.46.0
-	golang.org/x/time v0.7.0
+	golang.org/x/time v0.12.0
 	google.golang.org/protobuf v1.36.10
 )
 
