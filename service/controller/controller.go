@@ -162,10 +162,21 @@ func (c *Controller) Start() error {
 			}})
 	}
 
-	// Start periodic tasks
+	// Start periodic tasks. Wrap each in a panic recovery so a bug
+	// in one tick doesn't kill the whole process; the rest of the
+	// monitor (cert / nodeInfo / userInfo / report) keep running.
 	for i := range c.tasks {
 		c.logger.Printf("Start %s periodic task", c.tasks[i].tag)
-		go c.tasks[i].Start()
+		tag := c.tasks[i].tag
+		task := c.tasks[i]
+		go func() {
+			defer func() {
+				if r := recover(); r != nil {
+					c.logger.Printf("recovered panic in %s periodic task: %v", tag, r)
+				}
+			}()
+			task.Start()
+		}()
 	}
 
 	return nil
