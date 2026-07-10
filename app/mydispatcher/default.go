@@ -43,8 +43,18 @@ type cachedReader struct {
 func (r *cachedReader) Cache(b *buf.Buffer) {
 	mb, _ := r.reader.ReadMultiBufferTimeout(time.Millisecond * 100)
 	r.Lock()
+	defer r.Unlock()
 	if !mb.IsEmpty() {
-		r.cache, _ = buf.MergeMulti(r.cache, mb)
+		merged, err := buf.MergeMulti(r.cache, mb)
+		if err != nil {
+			// Fall back to the original cache rather than discarding
+			// the bytes we just read. A merge failure usually means a
+			// buffer pool mismatch, which the next successful read
+			// will repair naturally.
+			errors.LogError(context.Background(), "merge multi buffer: ", err)
+		} else {
+			r.cache = merged
+		}
 	}
 	b.Clear()
 	rawBytes := b.Extend(buf.Size)

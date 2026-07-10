@@ -346,7 +346,11 @@ func (c *APIClient) parseSSNodeResponse(s *serverConfig) (*api.NodeInfo, error) 
 		h := simplejson.New()
 		h.Set("type", "http")
 		h.SetPath([]string{"request", "path"}, path)
-		header, _ = h.Encode()
+		encoded, err := h.Encode()
+		if err != nil {
+			return nil, fmt.Errorf("encode http request header: %w", err)
+		}
+		header = encoded
 	}
 	// Create GeneralNodeInfo
 	return &api.NodeInfo{

@@ -98,15 +98,13 @@ func (c *Controller) addUsers(users []*protocol.User, tag string) error {
 		if err != nil {
 			return err
 		}
-		// Pre-register per-user traffic counters so core can increment them (downlink/uplink)
+		// Pre-register per-user traffic counters so core can increment them (downlink/uplink).
+		// Errors are intentionally ignored: a missing counter is non-fatal and
+		// stats.GetOrRegisterCounter will create the entry on first use anyway.
 		uName := "user>>>" + mUser.Email + ">>>traffic>>>uplink"
 		dName := "user>>>" + mUser.Email + ">>>traffic>>>downlink"
-		if _, _ = stats.GetOrRegisterCounter(c.stm, uName); true {
-			// no-op
-		}
-		if _, _ = stats.GetOrRegisterCounter(c.stm, dName); true {
-			// no-op
-		}
+		_, _ = stats.GetOrRegisterCounter(c.stm, uName)
+		_, _ = stats.GetOrRegisterCounter(c.stm, dName)
 	}
 	return nil
 }
