@@ -629,11 +629,13 @@ func (c *Controller) certMonitor() error {
 		case "dns", "http", "tls":
 			lego, err := mylego.New(c.config.CertConfig)
 			if err != nil {
+				// Skip renewal if we failed to build the cert manager;
+				// otherwise the next line would nil-deref on lego.
 				c.logger.Print(err)
+				return err
 			}
 			// Xray-core supports the OcspStapling certification hot renew
-			_, _, _, err = lego.RenewCert()
-			if err != nil {
+			if _, _, _, err = lego.RenewCert(); err != nil {
 				c.logger.Print(err)
 			}
 		}
