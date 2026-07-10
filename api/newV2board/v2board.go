@@ -381,8 +381,8 @@ func (c *APIClient) parseV2rayNodeResponse(s *serverConfig) (*api.NodeInfo, erro
 	} else {
 		dest = s.VlessTlsSettings.Sni
 	}
-	if s.VlessTlsSettings.xVer != 0 {
-		xVer = s.VlessTlsSettings.xVer
+	if s.VlessTlsSettings.XVer != 0 {
+		xVer = s.VlessTlsSettings.XVer
 	} else {
 		xVer = 0
 	}
