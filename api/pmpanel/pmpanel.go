@@ -373,7 +373,11 @@ func (c *APIClient) ParseV2rayNodeResponse(nodeInfoResponse *NodeInfoResponse) (
 	case "grpc":
 		serviceName = nodeInfoResponse.Sni
 	case "tcp":
-		// TODO
+		// Raw TCP carries no per-connection metadata; the
+		// existing default values (empty host/path/serviceName)
+		// are correct. Keep the case explicit so a future
+		// transport string surfaces as the default 'no fields
+		// set' branch instead of silently masquerading.
 	}
 	// Compatible with more node types config
 	switch nodeInfoResponse.Security {
