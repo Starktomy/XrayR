@@ -577,15 +577,19 @@ func (c *Controller) userInfoMonitor() (err error) {
 	}
 	if len(userTraffic) > 0 {
 		c.logger.Printf("Reporting %d user(s) traffic to panel; example: UID=%d up=%d down=%d", len(userTraffic), userTraffic[0].UID, userTraffic[0].Upload, userTraffic[0].Download)
-		var err error // Define an empty error
-		if !c.config.DisableUploadTraffic {
-			err = c.apiClient.ReportUserTraffic(&userTraffic)
-		}
-		// If report traffic error, not clear the traffic
-		if err != nil {
-			c.logger.Print(err)
-		} else {
+		var err error
+		if c.config.DisableUploadTraffic {
+			// Without upload, we still need to reset counters so
+			// the next tick doesn't re-report the same bytes.
 			c.resetTraffic(&upCounterList, &downCounterList)
+		} else {
+			err = c.apiClient.ReportUserTraffic(&userTraffic)
+			// If report traffic error, do not clear the traffic.
+			if err != nil {
+				c.logger.Print(err)
+			} else {
+				c.resetTraffic(&upCounterList, &downCounterList)
+			}
 		}
 	}
 
