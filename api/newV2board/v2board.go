@@ -131,7 +131,7 @@ func (c *APIClient) Debug() {
 }
 
 func (c *APIClient) assembleURL(path string) string {
-	return c.APIHost + path
+	return api.AssembleURLFunc(c.APIHost, path)
 }
 
 func (c *APIClient) parseResponse(res *resty.Response, path string, err error) (*simplejson.Json, error) {

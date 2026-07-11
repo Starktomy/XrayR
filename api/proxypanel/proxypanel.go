@@ -125,13 +125,13 @@ func (c *APIClient) createCommonRequest() *resty.Request {
 }
 
 func (c *APIClient) parseResponse(res *resty.Response, path string, err error) (*Response, error) {
-	if err != nil {
-		return nil, fmt.Errorf("request %s failed: %s", c.assembleURL(path), err)
+	if cerr := api.CheckResponse(res, c.assembleURL(path), err); cerr != nil {
+		return nil, cerr
 	}
 
 	if res.StatusCode() > 400 {
 		body := res.Body()
-		return nil, fmt.Errorf("request %s failed: %s, %s", c.assembleURL(path), string(body), err)
+		return nil, fmt.Errorf("request %s failed: %s", c.assembleURL(path), string(body))
 	}
 	response := res.Result().(*Response)
 
