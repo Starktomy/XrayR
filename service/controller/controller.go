@@ -3,6 +3,8 @@ package controller
 import (
 	"errors"
 	"fmt"
+	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -54,6 +56,15 @@ type Controller struct {
 	// writes Lock the full block.
 	nodeInfoMu sync.RWMutex
 	userListMu sync.RWMutex
+
+	// monitorErrs aggregates the most recent error from each
+	// periodic monitor. The monitor goroutines write via
+	// recordMonitorError, Close reads the result. This gives
+	// the operator a single error to look at on shutdown
+	// instead of a long stream of c.logger.Print lines that
+	// the previous code threw away.
+	monitorErrsMu sync.Mutex
+	monitorErrs   map[string]error
 }
 
 type periodicTask struct {
@@ -90,6 +101,34 @@ func (c *Controller) setUserList(ul *[]api.UserInfo) {
 	c.userListMu.Lock()
 	defer c.userListMu.Unlock()
 	c.userList = ul
+}
+
+// recordMonitorError stores err under task so Close can
+// surface it. Only the most recent error per task is kept;
+// periodic monitors recover from individual failures, and
+// keeping the latest is enough to diagnose why a node fell
+// behind. nil clears the entry (the monitor succeeded).
+func (c *Controller) recordMonitorError(task string, err error) {
+	if err == nil {
+		return
+	}
+	c.monitorErrsMu.Lock()
+	defer c.monitorErrsMu.Unlock()
+	if c.monitorErrs == nil {
+		c.monitorErrs = make(map[string]error)
+	}
+	c.monitorErrs[task] = err
+}
+
+// drainMonitorErrors returns the accumulated monitor errors
+// and clears the map. Used by Close to roll the per-task
+// failures into a single error to return to the panel.
+func (c *Controller) drainMonitorErrors() map[string]error {
+	c.monitorErrsMu.Lock()
+	defer c.monitorErrsMu.Unlock()
+	out := c.monitorErrs
+	c.monitorErrs = nil
+	return out
 }
 
 // New return a Controller service with default parameters.
@@ -214,9 +253,20 @@ func (c *Controller) Start() error {
 		c.logger.Printf("Start %s periodic task", c.tasks[i].tag)
 		tag := c.tasks[i].tag
 		task := c.tasks[i]
+		execute := c.tasks[i].Periodic.Execute
+		c.tasks[i].Periodic.Execute = func() error {
+			err := execute()
+			// Stash non-fatal errors so Close() can report a
+			// single aggregated error instead of a long
+			// stream of c.logger.Print lines the operator
+			// would otherwise have to scroll back through.
+			c.recordMonitorError(tag, err)
+			return err
+		}
 		go func() {
 			defer func() {
 				if r := recover(); r != nil {
+					c.recordMonitorError(tag, fmt.Errorf("panic: %v", r))
 					c.logger.Printf("recovered panic in %s periodic task: %v", tag, r)
 				}
 			}()
@@ -237,6 +287,20 @@ func (c *Controller) Close() error {
 		}
 	}
 
+	// Aggregate any non-fatal monitor errors collected during
+	// the run. Returning them as a single error (joined via
+	// '\n' so it is readable in the panel log) gives operators
+	// one place to look instead of having to scroll through
+	// the periodic logger.Print lines that were previously
+	// the only record.
+	if errs := c.drainMonitorErrors(); len(errs) > 0 {
+		msgs := make([]string, 0, len(errs))
+		for tag, e := range errs {
+			msgs = append(msgs, fmt.Sprintf("%s: %s", tag, e))
+		}
+		sort.Strings(msgs) // stable order for tests/logs
+		return errors.New(strings.Join(msgs, "; "))
+	}
 	return nil
 }
 
