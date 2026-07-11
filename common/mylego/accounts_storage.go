@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"errors"
+	"fmt"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -67,12 +68,12 @@ type AccountsStorage struct {
 }
 
 // NewAccountsStorage Creates a new AccountsStorage.
-func NewAccountsStorage(l *LegoCMD) *AccountsStorage {
+func NewAccountsStorage(l *LegoCMD) (*AccountsStorage, error) {
 	email := l.C.Email
 
 	serverURL, err := url.Parse(acme.LetsEncryptURL)
 	if err != nil {
-		log.Panic(err)
+		return nil, fmt.Errorf("parse Let's Encrypt URL: %w", err)
 	}
 
 	rootPath := filepath.Join(l.path, baseAccountsRootFolderName)
@@ -86,17 +87,17 @@ func NewAccountsStorage(l *LegoCMD) *AccountsStorage {
 		rootUserPath:    rootUserPath,
 		keysPath:        filepath.Join(rootUserPath, baseKeysFolderName),
 		accountFilePath: filepath.Join(rootUserPath, accountFileName),
-	}
+	}, nil
 }
 
-func (s *AccountsStorage) ExistsAccountFilePath() bool {
+func (s *AccountsStorage) ExistsAccountFilePath() (bool, error) {
 	accountFile := filepath.Join(s.rootUserPath, accountFileName)
 	if _, err := os.Stat(accountFile); os.IsNotExist(err) {
-		return false
+		return false, nil
 	} else if err != nil {
-		log.Panic(err)
+		return false, err
 	}
-	return true
+	return true, nil
 }
 
 func (s *AccountsStorage) GetRootPath() string {
@@ -120,16 +121,16 @@ func (s *AccountsStorage) Save(account *Account) error {
 	return os.WriteFile(s.accountFilePath, jsonBytes, filePerm)
 }
 
-func (s *AccountsStorage) LoadAccount(privateKey crypto.PrivateKey) *Account {
+func (s *AccountsStorage) LoadAccount(privateKey crypto.PrivateKey) (*Account, error) {
 	fileBytes, err := os.ReadFile(s.accountFilePath)
 	if err != nil {
-		log.Panicf("Could not load file for account %s: %v", s.userID, err)
+		return nil, fmt.Errorf("load account file for %s: %w", s.userID, err)
 	}
 
 	var account Account
 	err = json.Unmarshal(fileBytes, &account)
 	if err != nil {
-		log.Panicf("Could not parse file for account %s: %v", s.userID, err)
+		return nil, fmt.Errorf("parse account file for %s: %w", s.userID, err)
 	}
 
 	account.key = privateKey
@@ -137,47 +138,50 @@ func (s *AccountsStorage) LoadAccount(privateKey crypto.PrivateKey) *Account {
 	if account.Registration == nil || account.Registration.Body.Status == "" {
 		reg, err := tryRecoverRegistration(privateKey)
 		if err != nil {
-			log.Panicf("Could not load account for %s. Registration is nil: %#v", s.userID, err)
+			return nil, fmt.Errorf("recover registration for %s: %w", s.userID, err)
 		}
 
 		account.Registration = reg
 		err = s.Save(&account)
 		if err != nil {
-			log.Panicf("Could not save account for %s. Registration is nil: %#v", s.userID, err)
+			return nil, fmt.Errorf("save recovered account for %s: %w", s.userID, err)
 		}
 	}
 
-	return &account
+	return &account, nil
 }
 
-func (s *AccountsStorage) GetPrivateKey(keyType certcrypto.KeyType) crypto.PrivateKey {
+func (s *AccountsStorage) GetPrivateKey(keyType certcrypto.KeyType) (crypto.PrivateKey, error) {
 	accKeyPath := filepath.Join(s.keysPath, s.userID+".key")
 
 	if _, err := os.Stat(accKeyPath); os.IsNotExist(err) {
 		log.Printf("No key found for account %s. Generating a %s key.", s.userID, keyType)
-		s.createKeysFolder()
+		if err := s.createKeysFolder(); err != nil {
+			return nil, err
+		}
 
 		privateKey, err := generatePrivateKey(accKeyPath, keyType)
 		if err != nil {
-			log.Panicf("Could not generate RSA private account key for account %s: %v", s.userID, err)
+			return nil, fmt.Errorf("generate RSA private account key for %s: %w", s.userID, err)
 		}
 
 		log.Printf("Saved key to %s", accKeyPath)
-		return privateKey
+		return privateKey, nil
 	}
 
 	privateKey, err := loadPrivateKey(accKeyPath)
 	if err != nil {
-		log.Panicf("Could not load RSA private key from file %s: %v", accKeyPath, err)
+		return nil, fmt.Errorf("load RSA private key from %s: %w", accKeyPath, err)
 	}
 
-	return privateKey
+	return privateKey, nil
 }
 
-func (s *AccountsStorage) createKeysFolder() {
+func (s *AccountsStorage) createKeysFolder() error {
 	if err := createNonExistingFolder(s.keysPath); err != nil {
-		log.Panicf("Could not check/create directory for account %s: %v", s.userID, err)
+		return fmt.Errorf("check/create keys directory for %s: %w", s.userID, err)
 	}
+	return nil
 }
 
 func generatePrivateKey(file string, keyType certcrypto.KeyType) (crypto.PrivateKey, error) {
