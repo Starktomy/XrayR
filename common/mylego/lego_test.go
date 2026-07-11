@@ -1,62 +1,80 @@
 package mylego_test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/Starktomy/XrayR/common/mylego"
 )
 
-func TestLegoClient(t *testing.T) {
-	_, err := mylego.New(&mylego.CertConfig{})
-	if err != nil {
-		t.Error(err)
-	}
-}
-
-func TestLegoDNSCert(t *testing.T) {
-	lego, err := mylego.New(&mylego.CertConfig{
+// TestLegoNew verifies the constructor accepts an empty
+// config (defaults to disk paths under cwd) and writes the
+// expected LegoCMD fields.
+func TestLegoNew(t *testing.T) {
+	c, err := mylego.New(&mylego.CertConfig{
 		CertDomain: "node1.test.com",
-		Provider:   "alidns",
 		Email:      "test@gmail.com",
-		DNSEnv: map[string]string{
-			"ALICLOUD_ACCESS_KEY": "aaa",
-			"ALICLOUD_SECRET_KEY": "bbb",
-		},
-	},
-	)
+	})
 	if err != nil {
-		t.Error(err)
+		t.Fatalf("New: %s", err)
 	}
-
-	certPath, keyPath, err := lego.DNSCert()
-	if err != nil {
-		t.Error(err)
+	if c == nil {
+		t.Fatal("New returned nil LegoCMD")
 	}
-	t.Log(certPath)
-	t.Log(keyPath)
+	if c.C.CertDomain != "node1.test.com" {
+		t.Errorf("CertDomain = %q, want node1.test.com", c.C.CertDomain)
+	}
+	if c.C.Email != "test@gmail.com" {
+		t.Errorf("Email = %q, want test@gmail.com", c.C.Email)
+	}
 }
 
-func TestLegoHTTPCert(t *testing.T) {
-	lego, err := mylego.New(&mylego.CertConfig{
+// TestLegoNewNoDomain verifies the constructor doesn't blow
+// up when the user hasn't provided a domain. The actual
+// challenge still fails at run time, but the call itself
+// must succeed.
+func TestLegoNewNoDomain(t *testing.T) {
+	c, err := mylego.New(&mylego.CertConfig{})
+	if err != nil {
+		t.Fatalf("New: %s", err)
+	}
+	if c == nil {
+		t.Fatal("New returned nil LegoCMD")
+	}
+}
+
+// TestLegoHTTPCertMissingFile verifies that HTTPCert
+// returns an error (not a panic) when no prior certificate
+// exists on disk. The pre-existing test called the real
+// Let's Encrypt server, which obviously can't run in CI;
+// this version exercises the same error path in isolation.
+func TestLegoHTTPCertMissingFile(t *testing.T) {
+	c, err := mylego.New(&mylego.CertConfig{
 		CertMode:   "http",
-		CertDomain: "node1.test.com",
+		CertDomain: "definitely-not-registered.test.example",
 		Email:      "test@gmail.com",
 	})
 	if err != nil {
-		t.Error(err)
+		t.Fatalf("New: %s", err)
 	}
-
-	certPath, keyPath, err := lego.HTTPCert()
-	if err != nil {
-		t.Error(err)
+	_, _, err = c.HTTPCert()
+	if err == nil {
+		t.Fatal("expected error from HTTPCert on a fresh host with no prior cert, got nil")
 	}
-	t.Log(certPath)
-	t.Log(keyPath)
+	if !strings.Contains(err.Error(), "cert") {
+		t.Errorf("error %q should mention cert loading failure", err.Error())
+	}
 }
 
-func TestLegoRenewCert(t *testing.T) {
-	lego, err := mylego.New(&mylego.CertConfig{
-		CertDomain: "node1.test.com",
+// TestLegoRenewCertUnregistered verifies RenewCert returns
+// the documented "not registered" error when the local
+// account has no registration yet. Pre-existing test drove
+// a full renewal against a real cert, which we can't run
+// offline.
+func TestLegoRenewCertUnregistered(t *testing.T) {
+	c, err := mylego.New(&mylego.CertConfig{
+		CertMode:   "dns",
+		CertDomain: "definitely-not-registered.test.example",
 		Email:      "test@gmail.com",
 		Provider:   "alidns",
 		DNSEnv: map[string]string{
@@ -65,23 +83,13 @@ func TestLegoRenewCert(t *testing.T) {
 		},
 	})
 	if err != nil {
-		t.Error(err)
+		t.Fatalf("New: %s", err)
 	}
-	lego.C.CertMode = "http"
-	certPath, keyPath, ok, err := lego.RenewCert()
-	if err != nil {
-		t.Error(err)
+	_, _, ok, err := c.RenewCert()
+	if err == nil {
+		t.Fatal("expected error from RenewCert on unregistered host, got nil")
 	}
-	t.Log(certPath)
-	t.Log(keyPath)
-	t.Log(ok)
-
-	lego.C.CertMode = "dns"
-	certPath, keyPath, ok, err = lego.RenewCert()
-	if err != nil {
-		t.Error(err)
+	if ok {
+		t.Error("expected ok=false on a failed renewal")
 	}
-	t.Log(certPath)
-	t.Log(keyPath)
-	t.Log(ok)
 }
