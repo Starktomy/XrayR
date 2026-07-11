@@ -392,7 +392,9 @@ func (c *APIClient) ParseNodeInfo(nodeInfoResponse *Server) (*api.NodeInfo, erro
 	realityConfig := new(api.REALITYConfig)
 	if nodeConfig.RealitySettings != nil {
 		r := new(RealitySettings)
-		json.Unmarshal(nodeConfig.RealitySettings, r)
+		if err := json.Unmarshal(nodeConfig.RealitySettings, r); err != nil {
+			return nil, fmt.Errorf("unmarshal RealitySettings: %w", err)
+		}
 		realityConfig = &api.REALITYConfig{
 			Dest:             r.Dest,
 			ProxyProtocolVer: r.ProxyProtocolVer,
@@ -406,17 +408,23 @@ func (c *APIClient) ParseNodeInfo(nodeInfoResponse *Server) (*api.NodeInfo, erro
 	}
 	wsConfig := new(WsSettings)
 	if nodeConfig.WsSettings != nil {
-		json.Unmarshal(nodeConfig.WsSettings, wsConfig)
+		if err := json.Unmarshal(nodeConfig.WsSettings, wsConfig); err != nil {
+			return nil, fmt.Errorf("unmarshal WsSettings: %w", err)
+		}
 	}
 
 	grpcConfig := new(GrpcSettigns)
 	if nodeConfig.GrpcSettings != nil {
-		json.Unmarshal(nodeConfig.GrpcSettings, grpcConfig)
+		if err := json.Unmarshal(nodeConfig.GrpcSettings, grpcConfig); err != nil {
+			return nil, fmt.Errorf("unmarshal GrpcSettings: %w", err)
+		}
 	}
 
 	tcpConfig := new(TcpSettings)
 	if nodeConfig.TcpSettings != nil {
-		json.Unmarshal(nodeConfig.TcpSettings, tcpConfig)
+		if err := json.Unmarshal(nodeConfig.TcpSettings, tcpConfig); err != nil {
+			return nil, fmt.Errorf("unmarshal TcpSettings: %w", err)
+		}
 	}
 
 	// Create GeneralNodeInfo
