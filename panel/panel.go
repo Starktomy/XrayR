@@ -40,6 +40,9 @@ type Panel struct {
 	Running     bool
 }
 
+// New constructs a Panel with the given configuration but
+// does not yet start the underlying xray instance or any
+// node controllers. Call Start to bring the panel up.
 func New(panelConfig *Config) *Panel {
 	p := &Panel{panelConfig: panelConfig}
 	return p

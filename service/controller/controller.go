@@ -54,6 +54,13 @@ type periodicTask struct {
 }
 
 // New return a Controller service with default parameters.
+// New constructs a Controller bound to an already-started
+// xray server. The controller is responsible for keeping the
+// server's inbounds, outbounds, and user list in sync with
+// the upstream panel.
+//
+// server must have the mydispatcher feature registered; the
+// controller's type assertion will panic otherwise.
 func New(server *core.Instance, api api.API, config *Config, panelType string) *Controller {
 	logger := log.NewEntry(log.StandardLogger()).WithFields(log.Fields{
 		"Host": api.Describe().APIHost,

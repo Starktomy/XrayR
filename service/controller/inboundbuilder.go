@@ -20,6 +20,9 @@ import (
 )
 
 // InboundBuilder build Inbound config for different protocol
+// InboundBuilder builds a xray-core InboundHandlerConfig from the
+// per-node nodeInfo and the controller Config. The tag is used to
+// label the resulting handler.
 func InboundBuilder(config *Config, nodeInfo *api.NodeInfo, tag string) (*core.InboundHandlerConfig, error) {
 	inboundDetourConfig := &conf.InboundDetourConfig{}
 	// Build Listen IP address

@@ -48,6 +48,8 @@ type Limiter struct {
 	InboundInfo *sync.Map // Key: Tag, Value: *InboundInfo
 }
 
+// New returns a Limiter with an empty inbound map, ready
+// to receive AddInboundLimiter calls.
 func New() *Limiter {
 	return &Limiter{
 		InboundInfo: new(sync.Map),

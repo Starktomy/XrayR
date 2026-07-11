@@ -116,6 +116,9 @@ func run() error {
 	return nil
 }
 
+// Execute runs the cobra root command and returns its
+// error. The root command blocks on SIGINT/SIGTERM and
+// returns nil on graceful shutdown.
 func Execute() error {
 	return rootCmd.Execute()
 }

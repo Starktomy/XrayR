@@ -11,6 +11,9 @@ import (
 )
 
 // OutboundBuilder build freedom outbound config for addOutbound
+// OutboundBuilder builds a xray-core OutboundHandlerConfig from the
+// per-node nodeInfo and the controller Config. The tag is used to
+// label the resulting handler so the dispatcher can match it.
 func OutboundBuilder(config *Config, nodeInfo *api.NodeInfo, tag string) (*core.OutboundHandlerConfig, error) {
 	outboundDetourConfig := &conf.OutboundDetourConfig{}
 	outboundDetourConfig.Protocol = "freedom"

@@ -20,6 +20,9 @@ type Manager struct {
 	InboundDetectResult *sync.Map // key: Tag, Value: mapset.NewSet []api.DetectResult
 }
 
+// New returns a Manager with empty InboundRule and
+// InboundDetectResult maps, ready to receive per-inbound
+// rule updates.
 func New() *Manager {
 	return &Manager{
 		InboundRule:         new(sync.Map),

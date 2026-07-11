@@ -12,6 +12,11 @@ import (
 )
 
 // GetSystemInfo get the system info of a given periodic
+// GetSystemInfo returns the current CPU, memory, disk, and
+// uptime usage as percentages / seconds. Any individual
+// collector error is joined and returned as err so the
+// caller can decide whether to retry or report a partial
+// snapshot.
 func GetSystemInfo() (Cpu float64, Mem float64, Disk float64, Uptime uint64, err error) {
 
 	errorString := ""
