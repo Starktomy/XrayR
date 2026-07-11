@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"sync"
 	"time"
 
 	log "github.com/sirupsen/logrus"
@@ -46,11 +47,50 @@ type Controller struct {
 	dispatcher   *mydispatcher.DefaultDispatcher
 	startAt      time.Time
 	logger       *log.Entry
+
+	// nodeInfoMu and userListMu protect nodeInfo / userList
+	// against concurrent reads from the dispatch path and
+	// writes from the four periodic monitor goroutines
+	// (cert / nodeInfo / userInfo / report). Reads use RLock,
+	// writes Lock the full block.
+	nodeInfoMu sync.RWMutex
+	userListMu sync.RWMutex
 }
 
 type periodicTask struct {
 	tag string
 	*task.Periodic
+}
+
+// getNodeInfo returns the current nodeInfo under a read lock.
+// Callers that need to compare against a freshly fetched
+// descriptor must use this instead of touching c.nodeInfo
+// directly so the four monitor goroutines don't race.
+func (c *Controller) getNodeInfo() *api.NodeInfo {
+	c.nodeInfoMu.RLock()
+	defer c.nodeInfoMu.RUnlock()
+	return c.nodeInfo
+}
+
+// setNodeInfo stores a new nodeInfo under a write lock.
+func (c *Controller) setNodeInfo(ni *api.NodeInfo) {
+	c.nodeInfoMu.Lock()
+	defer c.nodeInfoMu.Unlock()
+	c.nodeInfo = ni
+}
+
+// getUserList returns the current user list under a read lock.
+func (c *Controller) getUserList() *[]api.UserInfo {
+	c.userListMu.RLock()
+	defer c.userListMu.RUnlock()
+	return c.userList
+}
+
+// setUserList stores a new user list under a write lock.
+func (c *Controller) setUserList(ul *[]api.UserInfo) {
+	c.userListMu.Lock()
+	defer c.userListMu.Unlock()
+	c.userList = ul
 }
 
 // New return a Controller service with default parameters.
@@ -95,7 +135,7 @@ func (c *Controller) Start() error {
 	if newNodeInfo.Port == 0 {
 		return errors.New("server port must > 0")
 	}
-	c.nodeInfo = newNodeInfo
+	c.setNodeInfo(newNodeInfo)
 	c.Tag = c.buildNodeTag()
 
 	// Add new tag
@@ -110,7 +150,7 @@ func (c *Controller) Start() error {
 	}
 
 	// sync controller userList
-	c.userList = userInfo
+	c.setUserList(userInfo)
 
 	err = c.addNewUser(userInfo, newNodeInfo)
 	if err != nil {
@@ -159,7 +199,7 @@ func (c *Controller) Start() error {
 	)
 
 	// Check cert service in need
-	if c.nodeInfo.EnableTLS && c.config.EnableREALITY == false {
+	if c.getNodeInfo().EnableTLS && c.config.EnableREALITY == false {
 		c.tasks = append(c.tasks, periodicTask{
 			tag: "cert monitor",
 			Periodic: &task.Periodic{
@@ -213,7 +253,7 @@ func (c *Controller) nodeInfoMonitor() (err error) {
 	if err != nil {
 		if err.Error() == api.NodeNotModified {
 			nodeInfoChanged = false
-			newNodeInfo = c.nodeInfo
+			newNodeInfo = c.getNodeInfo()
 		} else {
 			c.logger.Print(err)
 			return nil
@@ -229,7 +269,7 @@ func (c *Controller) nodeInfoMonitor() (err error) {
 	if err != nil {
 		if err.Error() == api.UserNotModified {
 			usersChanged = false
-			newUserInfo = c.userList
+			newUserInfo = c.getUserList()
 		} else {
 			c.logger.Print(err)
 			return nil
@@ -246,7 +286,7 @@ func (c *Controller) nodeInfoMonitor() (err error) {
 				c.logger.Print(err)
 				return nil
 			}
-			if c.nodeInfo.NodeType == "Shadowsocks-Plugin" {
+			if c.getNodeInfo().NodeType == "Shadowsocks-Plugin" {
 				err = c.removeOldTag(fmt.Sprintf("dokodemo-door_%s+1", c.Tag))
 			}
 			if err != nil {
@@ -254,7 +294,7 @@ func (c *Controller) nodeInfoMonitor() (err error) {
 				return nil
 			}
 			// Add new tag
-			c.nodeInfo = newNodeInfo
+			c.setNodeInfo(newNodeInfo)
 			c.Tag = c.buildNodeTag()
 			err = c.addNewTag(newNodeInfo)
 			if err != nil {
@@ -325,7 +365,7 @@ func (c *Controller) nodeInfoMonitor() (err error) {
 		}
 		c.logger.Printf("%d user deleted, %d user added", len(deleted), len(added))
 	}
-	c.userList = newUserInfo
+	c.setUserList(newUserInfo)
 	return nil
 }
 
@@ -546,7 +586,7 @@ func (c *Controller) userInfoMonitor() (err error) {
 	AutoSpeedLimit := int64(c.config.AutoSpeedLimitConfig.Limit)
 	UpdatePeriodic := int64(c.config.UpdatePeriodic)
 	limitedUsers := make([]api.UserInfo, 0)
-	for _, user := range *c.userList {
+	for _, user := range *c.getUserList() {
 		userTag := c.buildUserTag(&user)
 		up, down, upCounter, downCounter := c.getTraffic(userTag)
 		if down > 0 {
@@ -636,13 +676,13 @@ func (c *Controller) userInfoMonitor() (err error) {
 }
 
 func (c *Controller) buildNodeTag() string {
-	return fmt.Sprintf("%s_%s_%d", c.nodeInfo.NodeType, c.config.ListenIP, c.nodeInfo.Port)
+	return fmt.Sprintf("%s_%s_%d", c.getNodeInfo().NodeType, c.config.ListenIP, c.getNodeInfo().Port)
 }
 
 
 // Check Cert
 func (c *Controller) certMonitor() error {
-	if c.nodeInfo.EnableTLS && c.config.EnableREALITY == false {
+	if c.getNodeInfo().EnableTLS && c.config.EnableREALITY == false {
 		switch c.config.CertConfig.CertMode {
 		case "dns", "http", "tls":
 			lego, err := mylego.New(c.config.CertConfig)
