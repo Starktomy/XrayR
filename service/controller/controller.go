@@ -3,7 +3,6 @@ package controller
 import (
 	"errors"
 	"fmt"
-	"reflect"
 	"sync"
 	"time"
 
@@ -278,37 +277,34 @@ func (c *Controller) nodeInfoMonitor() (err error) {
 
 	// If nodeInfo changed
 	if nodeInfoChanged {
-		if !reflect.DeepEqual(c.nodeInfo, newNodeInfo) {
-			// Remove old tag
-			oldTag := c.Tag
-			err := c.removeOldTag(oldTag)
-			if err != nil {
+		// The panel tells us explicitly whether the descriptor
+		// changed by returning 304 NotModified; in that case
+		// newNodeInfo is the old snapshot. Trust the 304 over
+		// a deep walk of the struct (which is O(field count)
+		// and would also be incorrect on any future field
+		// holding a func or chan).
+		oldTag := c.Tag
+		if err := c.removeOldTag(oldTag); err != nil {
+			c.logger.Print(err)
+			return nil
+		}
+		if c.getNodeInfo().NodeType == "Shadowsocks-Plugin" {
+			if err := c.removeOldTag(fmt.Sprintf("dokodemo-door_%s+1", c.Tag)); err != nil {
 				c.logger.Print(err)
 				return nil
 			}
-			if c.getNodeInfo().NodeType == "Shadowsocks-Plugin" {
-				err = c.removeOldTag(fmt.Sprintf("dokodemo-door_%s+1", c.Tag))
-			}
-			if err != nil {
-				c.logger.Print(err)
-				return nil
-			}
-			// Add new tag
-			c.setNodeInfo(newNodeInfo)
-			c.Tag = c.buildNodeTag()
-			err = c.addNewTag(newNodeInfo)
-			if err != nil {
-				c.logger.Print(err)
-				return nil
-			}
-			nodeInfoChanged = true
-			// Remove Old limiter
-			if err = c.DeleteInboundLimiter(oldTag); err != nil {
-				c.logger.Print(err)
-				return nil
-			}
-		} else {
-			nodeInfoChanged = false
+		}
+		// Add new tag
+		c.setNodeInfo(newNodeInfo)
+		c.Tag = c.buildNodeTag()
+		if err := c.addNewTag(newNodeInfo); err != nil {
+			c.logger.Print(err)
+			return nil
+		}
+		// Remove Old limiter
+		if err := c.DeleteInboundLimiter(oldTag); err != nil {
+			c.logger.Print(err)
+			return nil
 		}
 	}
 
@@ -341,7 +337,7 @@ func (c *Controller) nodeInfoMonitor() (err error) {
 	} else {
 		var deleted, added []api.UserInfo
 		if usersChanged {
-			deleted, added = compareUserList(c.userList, newUserInfo)
+			deleted, added = compareUserList(c.getUserList(), newUserInfo)
 			if len(deleted) > 0 {
 				deletedEmail := make([]string, len(deleted))
 				for i, u := range deleted {
