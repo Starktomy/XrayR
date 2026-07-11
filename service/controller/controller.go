@@ -94,8 +94,7 @@ func (c *Controller) Start() error {
 	// Add new tag
 	err = c.addNewTag(newNodeInfo)
 	if err != nil {
-		c.logger.Panic(err)
-		return err
+		return fmt.Errorf("add new tag: %w", err)
 	}
 	// Update user
 	userInfo, err := c.apiClient.GetUserList()
@@ -187,7 +186,7 @@ func (c *Controller) Close() error {
 	for i := range c.tasks {
 		if c.tasks[i].Periodic != nil {
 			if err := c.tasks[i].Periodic.Close(); err != nil {
-				c.logger.Panicf("%s periodic task close failed: %s", c.tasks[i].tag, err)
+				return fmt.Errorf("%s periodic task close: %w", c.tasks[i].tag, err)
 			}
 		}
 	}
