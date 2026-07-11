@@ -150,10 +150,6 @@ func (c *APIClient) Describe() api.ClientInfo {
 	return api.ClientInfo{APIHost: c.APIHost, NodeID: c.NodeID, Key: c.Key, NodeType: c.NodeType}
 }
 
-// Debug set the client debug for client
-func (c *APIClient) Debug() {
-	c.client.SetDebug(true)
-}
 
 func (c *APIClient) assembleURL(path string) string {
 	return c.APIHost + path

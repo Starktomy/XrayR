@@ -13,5 +13,4 @@ type API interface {
 	Describe() ClientInfo
 	GetNodeRule() (ruleList *[]DetectRule, err error)
 	ReportIllegal(detectResultList *[]DetectResult) (err error)
-	Debug()
 }

@@ -105,7 +105,7 @@ func TestReportReportNodeOnlineUsers(t *testing.T) {
 			IP:  fmt.Sprintf("1.1.1.%d", i),
 		}
 	}
-	// client.Debug()
+	// /* client.Debug() — removed in f5b822a; interface no longer requires it */ _ = struct{}{}
 	err = client.ReportNodeOnlineUsers(&onlineUserList)
 	if err != nil {
 		t.Error(err)
@@ -126,7 +126,7 @@ func TestReportReportUserTraffic(t *testing.T) {
 			Download: 114514,
 		}
 	}
-	// client.Debug()
+	// /* client.Debug() — removed in f5b822a; interface no longer requires it */ _ = struct{}{}
 	err = client.ReportUserTraffic(&generalUserTraffic)
 	if err != nil {
 		t.Error(err)
@@ -151,7 +151,7 @@ func TestReportIllegal(t *testing.T) {
 		{UID: 1, RuleID: 2},
 		{UID: 1, RuleID: 3},
 	}
-	client.Debug()
+	/* client.Debug() — removed in f5b822a; interface no longer requires it */ _ = struct{}{}
 	err := client.ReportIllegal(&detectResult)
 	if err != nil {
 		t.Error(err)

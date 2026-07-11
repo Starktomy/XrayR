@@ -20,7 +20,7 @@ func CreateClient() api.API {
 
 func TestGetV2rayNodeinfo(t *testing.T) {
 	client := CreateClient()
-	client.Debug()
+	/* client.Debug() — removed in f5b822a; interface no longer requires it */ _ = struct{}{}
 	nodeInfo, err := client.GetNodeInfo()
 	if err != nil {
 		t.Error(err)
@@ -83,7 +83,7 @@ func TestReportReportUserTraffic(t *testing.T) {
 			Download: 114514,
 		}
 	}
-	// client.Debug()
+	// /* client.Debug() — removed in f5b822a; interface no longer requires it */ _ = struct{}{}
 	err = client.ReportUserTraffic(&generalUserTraffic)
 	if err != nil {
 		t.Error(err)
@@ -92,7 +92,7 @@ func TestReportReportUserTraffic(t *testing.T) {
 
 func TestGetNodeRule(t *testing.T) {
 	client := CreateClient()
-	client.Debug()
+	/* client.Debug() — removed in f5b822a; interface no longer requires it */ _ = struct{}{}
 	ruleList, err := client.GetNodeRule()
 	if err != nil {
 		t.Error(err)
