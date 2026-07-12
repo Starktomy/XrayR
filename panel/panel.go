@@ -18,10 +18,8 @@ import (
 	"github.com/xtls/xray-core/infra/conf"
 
 	"github.com/Starktomy/XrayR/api"
-	"github.com/Starktomy/XrayR/api/bunpanel"
 	"github.com/Starktomy/XrayR/api/gov2panel"
 	"github.com/Starktomy/XrayR/api/newV2board"
-	"github.com/Starktomy/XrayR/api/pmpanel"
 	"github.com/Starktomy/XrayR/api/proxypanel"
 	"github.com/Starktomy/XrayR/api/sspanel"
 	"github.com/Starktomy/XrayR/api/v2raysocks"
@@ -189,16 +187,12 @@ func (p *Panel) Start() error {
 			apiClient = sspanel.New(nodeConfig.ApiConfig)
 		case "NewV2board", "V2board":
 			apiClient = newV2board.New(nodeConfig.ApiConfig)
-		case "PMpanel":
-			apiClient = pmpanel.New(nodeConfig.ApiConfig)
 		case "Proxypanel":
 			apiClient = proxypanel.New(nodeConfig.ApiConfig)
 		case "V2RaySocks":
 			apiClient = v2raysocks.New(nodeConfig.ApiConfig)
 		case "GoV2Panel":
 			apiClient = gov2panel.New(nodeConfig.ApiConfig)
-		case "BunPanel":
-			apiClient = bunpanel.New(nodeConfig.ApiConfig)
 		default:
 			return fmt.Errorf("unsupported panel type: %s", nodeConfig.PanelType)
 		}
