@@ -322,6 +322,12 @@ func (c *APIClient) GetNodeRule() (*[]api.DetectRule, error) {
 	// fix: reuse config response
 	c.access.Lock()
 	defer c.access.Unlock()
+	// ConfigResp is only populated by GetNodeInfo. If a
+	// caller asks for the rules before that, return the
+	// local fallback rather than nil-deref on the parser.
+	if c.ConfigResp == nil {
+		return &ruleList, nil
+	}
 	ruleListResponse := c.ConfigResp.Get("routing").Get("rules").GetIndex(1).Get("domain").MustStringArray()
 	for i, rule := range ruleListResponse {
 		rule = strings.TrimPrefix(rule, "regexp:")
