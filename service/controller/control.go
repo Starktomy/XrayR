@@ -50,7 +50,7 @@ func (c *Controller) addInbound(config *core.InboundHandlerConfig) error {
 	}
 	handler, ok := rawHandler.(inbound.Handler)
 	if !ok {
-		return fmt.Errorf("not an InboundHandler: %s", err)
+		return fmt.Errorf("not an InboundHandler: %w", err)
 	}
 	if err := c.ibm.AddHandler(context.Background(), handler); err != nil {
 		return err
@@ -65,7 +65,7 @@ func (c *Controller) addOutbound(config *core.OutboundHandlerConfig) error {
 	}
 	handler, ok := rawHandler.(outbound.Handler)
 	if !ok {
-		return fmt.Errorf("not an InboundHandler: %s", err)
+		return fmt.Errorf("not an InboundHandler: %w", err)
 	}
 	// Wrap outbound handler to ensure downlink stats are always counted (e.g., REALITY/VLESS cases)
 	handler = &statsOutboundWrapper{Handler: handler, pm: c.pm, sm: c.stm}
@@ -78,7 +78,7 @@ func (c *Controller) addOutbound(config *core.OutboundHandlerConfig) error {
 func (c *Controller) addUsers(users []*protocol.User, tag string) error {
 	handler, err := c.ibm.GetHandler(context.Background(), tag)
 	if err != nil {
-		return fmt.Errorf("no such inbound tag: %s", err)
+		return fmt.Errorf("no such inbound tag: %w", err)
 	}
 	inboundInstance, ok := handler.(proxy.GetInbound)
 	if !ok {
@@ -112,7 +112,7 @@ func (c *Controller) addUsers(users []*protocol.User, tag string) error {
 func (c *Controller) removeUsers(users []string, tag string) error {
 	handler, err := c.ibm.GetHandler(context.Background(), tag)
 	if err != nil {
-		return fmt.Errorf("no such inbound tag: %s", err)
+		return fmt.Errorf("no such inbound tag: %w", err)
 	}
 	inboundInstance, ok := handler.(proxy.GetInbound)
 	if !ok {
@@ -121,7 +121,7 @@ func (c *Controller) removeUsers(users []string, tag string) error {
 
 	userManager, ok := inboundInstance.GetInbound().(proxy.UserManager)
 	if !ok {
-		return fmt.Errorf("handler %s is not implement proxy.UserManager", err)
+		return fmt.Errorf("handler %s is not implement proxy.UserManager: %w", tag, err)
 	}
 	for _, email := range users {
 		err = userManager.RemoveUser(context.Background(), email)

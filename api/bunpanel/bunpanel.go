@@ -197,18 +197,18 @@ func (c *APIClient) GetNodeInfo() (nodeInfo *api.NodeInfo, err error) {
 	nodeInfoResponse := new(Server)
 
 	if err := json.Unmarshal(response.Datas, nodeInfoResponse); err != nil {
-		return nil, fmt.Errorf("unmarshal %s failed: %s", reflect.TypeOf(nodeInfoResponse), err)
+		return nil, fmt.Errorf("unmarshal %s: %w", reflect.TypeOf(nodeInfoResponse), err)
 	}
 
 	nodeInfo, err = c.ParseNodeInfo(nodeInfoResponse)
 	if err != nil {
 		res, _ := json.Marshal(nodeInfoResponse)
-		return nil, fmt.Errorf("parse node info failed: %s, \nError: %s, \nPlease check the doc of custom_config for help: https://xrayr-project.github.io/XrayR-doc/dui-jie-sspanel/sspanel/sspanel_custom_config", string(res), err)
+		return nil, fmt.Errorf("parse node info failed: %s, error: %w (see https://xrayr-project.github.io/XrayR-doc/dui-jie-sspanel/sspanel/sspanel_custom_config)", string(res), err)
 	}
 
 	if err != nil {
 		res, _ := json.Marshal(nodeInfoResponse)
-		return nil, fmt.Errorf("parse node info failed: %s, \nError: %s", string(res), err)
+		return nil, fmt.Errorf("parse node info failed: %s, error: %w", string(res), err)
 	}
 
 	return nodeInfo, nil
@@ -239,7 +239,7 @@ func (c *APIClient) GetUserList() (UserList *[]api.UserInfo, err error) {
 	userListResponse := new([]User)
 
 	if err := json.Unmarshal(response.Datas, userListResponse); err != nil {
-		return nil, fmt.Errorf("unmarshal %s failed: %s", reflect.TypeOf(userListResponse), err)
+		return nil, fmt.Errorf("unmarshal %s: %w", reflect.TypeOf(userListResponse), err)
 	}
 	userList, err := c.ParseUserListResponse(userListResponse)
 	if err != nil {

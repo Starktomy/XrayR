@@ -132,11 +132,11 @@ func (c *APIClient) assembleURL(path string) string {
 
 func (c *APIClient) parseResponse(res *resty.Response, path string, err error) (*simplejson.Json, error) {
 	if err != nil {
-		return nil, fmt.Errorf("request %s failed: %v", c.assembleURL(path), err)
+		return nil, fmt.Errorf("request %s failed: %w", c.assembleURL(path), err)
 	}
 
 	if res.StatusCode() > 399 {
-		return nil, fmt.Errorf("request %s failed: %s, %v", c.assembleURL(path), res.String(), err)
+		return nil, fmt.Errorf("request %s failed: %s, body: %w", c.assembleURL(path), res.String(), err)
 	}
 
 	rtn, err := simplejson.NewJson(res.Body())
@@ -191,7 +191,7 @@ func (c *APIClient) GetNodeInfo() (nodeInfo *api.NodeInfo, err error) {
 	}
 
 	if err != nil {
-		return nil, fmt.Errorf("parse node info failed: %s, \nError: %v", res.String(), err)
+		return nil, fmt.Errorf("parse node info failed: %s, error: %w", res.String(), err)
 	}
 
 	return nodeInfo, nil

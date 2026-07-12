@@ -72,7 +72,7 @@ func run() error {
 	config := getConfig()
 	panelConfig := &panel.Config{}
 	if err := config.Unmarshal(panelConfig); err != nil {
-		return fmt.Errorf("Parse config file %v failed: %s \n", cfgFile, err)
+		return fmt.Errorf("parse config file %v: %w", cfgFile, err)
 	}
 
 	if panelConfig.LogConfig.Level == "debug" {
