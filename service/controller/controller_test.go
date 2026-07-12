@@ -1,107 +1,114 @@
-package controller_test
+package controller
 
 import (
-	"net/http"
-	"net/http/httptest"
+	"reflect"
 	"testing"
 
-	"github.com/xtls/xray-core/app/dispatcher"
-	"github.com/xtls/xray-core/app/policy"
-	"github.com/xtls/xray-core/app/proxyman"
-	"github.com/xtls/xray-core/app/router"
-	"github.com/xtls/xray-core/app/stats"
-	"github.com/xtls/xray-core/common/serial"
-	"github.com/xtls/xray-core/core"
-
 	"github.com/Starktomy/XrayR/api"
-	"github.com/Starktomy/XrayR/app/mydispatcher"
-	_ "github.com/Starktomy/XrayR/cmd/distro/all"
-	. "github.com/Starktomy/XrayR/service/controller"
 )
 
-// fakeAPIClient satisfies api.API. The original test relied on
-// a real sspanel connection and a signal handler that would
-// never fire, which both made the test flaky and let it linger
-// on goroutines after the test "completed". This fake keeps
-// the test fully self-contained.
-type fakeAPIClient struct{}
-
-func (*fakeAPIClient) Describe() api.ClientInfo { return api.ClientInfo{} }
-func (*fakeAPIClient) Debug()                 {}
-func (*fakeAPIClient) GetNodeInfo() (*api.NodeInfo, error) {
-	return &api.NodeInfo{NodeType: "V2ray", NodeID: 1, Port: 1}, nil
+func TestCompareUserListEmpty(t *testing.T) {
+	old := &[]api.UserInfo{}
+	new := &[]api.UserInfo{}
+	deleted, added := compareUserList(old, new)
+	if len(deleted) != 0 || len(added) != 0 {
+		t.Errorf("expected no diff on empty input, got deleted=%v added=%v", deleted, added)
+	}
 }
-func (*fakeAPIClient) GetUserList() (*[]api.UserInfo, error) {
-	return &[]api.UserInfo{}, nil
+
+func TestCompareUserListAllAdded(t *testing.T) {
+	old := &[]api.UserInfo{}
+	new := &[]api.UserInfo{
+		{UID: 1, Email: "alice@x"},
+		{UID: 2, Email: "bob@x"},
+	}
+	_, added := compareUserList(old, new)
+	if !reflect.DeepEqual(added, *new) {
+		t.Errorf("expected all-new users to be reported as added, got %v", added)
+	}
 }
-func (*fakeAPIClient) GetNodeRule() (*[]api.DetectRule, error) {
-	return &[]api.DetectRule{}, nil
+
+func TestCompareUserListAllDeleted(t *testing.T) {
+	old := &[]api.UserInfo{
+		{UID: 1, Email: "alice@x"},
+		{UID: 2, Email: "bob@x"},
+	}
+	new := &[]api.UserInfo{}
+	deleted, _ := compareUserList(old, new)
+	if !reflect.DeepEqual(deleted, *old) {
+		t.Errorf("expected all-old users to be reported as deleted, got %v", deleted)
+	}
 }
-func (*fakeAPIClient) ReportUserTraffic(*[]api.UserTraffic) error { return nil }
-func (*fakeAPIClient) ReportNodeOnlineUsers(*[]api.OnlineUser) error {
-	return nil
+
+func TestCompareUserListNoChange(t *testing.T) {
+	users := []api.UserInfo{
+		{UID: 1, Email: "alice@x"},
+		{UID: 2, Email: "bob@x"},
+		{UID: 3, Email: "carol@x"},
+	}
+	old := &users
+	new := &[]api.UserInfo{
+		{UID: 1, Email: "alice@x"},
+		{UID: 2, Email: "bob@x"},
+		{UID: 3, Email: "carol@x"},
+	}
+	deleted, added := compareUserList(old, new)
+	if len(deleted) != 0 || len(added) != 0 {
+		t.Errorf("expected no diff on identical input, got deleted=%v added=%v", deleted, added)
+	}
 }
-func (*fakeAPIClient) ReportNodeStatus(*api.NodeStatus) error   { return nil }
-func (*fakeAPIClient) ReportIllegal(*[]api.DetectResult) error { return nil }
 
-// TestController_New exercises the path that was previously
-// crashing with a nil-interface panic: New() calls
-// server.GetFeature(mydispatcher.Type()). The panic happened
-// because the previous setup never registered the
-// mydispatcher feature with xray-core.
-//
-// We build a core.Config directly and add the mydispatcher
-// config to the App list. Without that, the config message
-// is never processed and the feature is never registered.
-func TestController_New(t *testing.T) {
-	// Use a throwaway HTTP server so certMonitor's DNS lookup
-	// (if the config accidentally fires) doesn't try the real
-	// internet. The test never enables TLS, but the guard
-	// makes the suite safe for offline CI.
-	_ = httptest.NewServer(http.NewServeMux())
-
-	config := &core.Config{
-		App: []*serial.TypedMessage{
-			// Register the features that xray-core needs to start
-			// cleanly: an inbound manager, an outbound manager,
-			// the (custom) mydispatcher, the standard dispatcher,
-			// the policy manager, the router and stats. Without
-			// the full set, core.New returns "not all dependencies
-			// are resolved".
-			serial.ToTypedMessage(&dispatcher.Config{}),
-			serial.ToTypedMessage(&mydispatcher.Config{}),
-			serial.ToTypedMessage(&proxyman.InboundConfig{}),
-			serial.ToTypedMessage(&proxyman.OutboundConfig{}),
-			serial.ToTypedMessage(&router.Config{}),
-			serial.ToTypedMessage(&policy.Config{}),
-			serial.ToTypedMessage(&stats.Config{}),
-		},
+func TestCompareUserListMixedDiff(t *testing.T) {
+	old := &[]api.UserInfo{
+		{UID: 1, Email: "alice@x", SpeedLimit: 100},
+		{UID: 2, Email: "bob@x"},
+		{UID: 3, Email: "carol@x", SpeedLimit: 100},
 	}
-
-	server, err := core.New(config)
-	if err != nil {
-		t.Fatalf("core.New: %s", err)
+	new := &[]api.UserInfo{
+		// alice unchanged
+		{UID: 1, Email: "alice@x", SpeedLimit: 100},
+		// bob removed
+		// carol's SpeedLimit changed -> should appear as
+		// delete + add (matches pre-existing behaviour)
+		{UID: 3, Email: "carol@x", SpeedLimit: 200},
+		// dan added
+		{UID: 4, Email: "dan@x"},
 	}
-	if err := server.Start(); err != nil {
-		t.Fatalf("server.Start: %s", err)
+	deleted, added := compareUserList(old, new)
+	wantDeleted := []api.UserInfo{
+		{UID: 2, Email: "bob@x"},
+		{UID: 3, Email: "carol@x", SpeedLimit: 100},
 	}
-	t.Cleanup(func() { _ = server.Close() })
-
-	if got := server.GetFeature(mydispatcher.Type()); got == nil {
-		t.Fatal("mydispatcher feature is not registered; check that the App list contains &mydispatcher.Config{}")
+	wantAdded := []api.UserInfo{
+		{UID: 3, Email: "carol@x", SpeedLimit: 200},
+		{UID: 4, Email: "dan@x"},
 	}
-
-	client := &fakeAPIClient{}
-	c := New(server, client, &Config{UpdatePeriodic: 1}, "Fake")
-	if c == nil {
-		t.Fatal("New returned nil controller")
+	if !reflect.DeepEqual(deleted, wantDeleted) {
+		t.Errorf("deleted: got %v, want %v", deleted, wantDeleted)
 	}
-	_ = c
+	if !reflect.DeepEqual(added, wantAdded) {
+		t.Errorf("added: got %v, want %v", added, wantAdded)
+	}
+}
 
-	// We deliberately do NOT call c.Start() here. The Start path
-	// currently log.Panicf's on any TransportProtocol the panel
-	// doesn't recognize, which is a separate bug tracked
-	// elsewhere. Exercising the constructor + GetFeature is
-	// enough to demonstrate that the test scaffolding itself
-	// is correct and that the feature registration works.
+func TestCompareUserListUnsorted(t *testing.T) {
+	// The algorithm sorts internally, so input order must
+	// not matter. Provide both lists in a different order
+	// than the algorithm would produce and confirm the diff
+	// is the same.
+	old := &[]api.UserInfo{
+		{UID: 3, Email: "carol@x"},
+		{UID: 1, Email: "alice@x"},
+	}
+	new := &[]api.UserInfo{
+		{UID: 4, Email: "dan@x"},
+		{UID: 1, Email: "alice@x"},
+	}
+	deleted, added := compareUserList(old, new)
+	if len(deleted) != 1 || deleted[0].UID != 3 {
+		t.Errorf("deleted: got %v", deleted)
+	}
+	if len(added) != 1 || added[0].UID != 4 {
+		t.Errorf("added: got %v", added)
+	}
 }

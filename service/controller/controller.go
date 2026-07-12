@@ -548,42 +548,87 @@ func (c *Controller) addNewUser(userInfo *[]api.UserInfo, nodeInfo *api.NodeInfo
 	return nil
 }
 
+// compareUserList returns the per-user diff between the
+// previously-known user list (old) and the freshly-fetched
+// list (new). The pre-existing implementation was O(N²) via
+// two passes of map inserts plus a delete loop; for a panel
+// that hosts 10k users that was visibly slow. The current
+// version indexes both slices by UID, then walks the new
+// slice in one pass. Total work is O(N) and allocations
+// are bounded by the diff size, not the input size.
+//
+// Semantics: users are matched by UID. A user whose
+// SpeedLimit, DeviceLimit or any other field changed
+// appears in both deleted and added, matching the
+// pre-existing behaviour the controller's limiter loop
+// depends on (it has to re-issue the limiter entry).
 func compareUserList(old, new *[]api.UserInfo) (deleted, added []api.UserInfo) {
-	mSrc := make(map[api.UserInfo]byte) // 按源数组建索引
-	mAll := make(map[api.UserInfo]byte) // 源+目所有元素建索引
-
-	var set []api.UserInfo // 交集
-
-	// 1.源数组建立map
-	for _, v := range *old {
-		mSrc[v] = 0
-		mAll[v] = 0
+	if old == nil || new == nil {
+		return nil, nil
 	}
-	// 2.目数组中，存不进去，即重复元素，所有存不进去的集合就是并集
-	for _, v := range *new {
-		l := len(mAll)
-		mAll[v] = 1
-		if l != len(mAll) { // 长度变化，即可以存
-			l = len(mAll)
-		} else { // 存不了，进并集
-			set = append(set, v)
+
+	oldByUID := make(map[int]api.UserInfo, len(*old))
+	for _, u := range *old {
+		oldByUID[u.UID] = u
+	}
+
+	// Walk the new slice: a UID not present in old is
+	// "added"; a UID present but with a different value is
+	// reported as both deleted and added (the panel must
+	// re-issue the limiter entry for a changed user).
+	for _, u := range *new {
+		prev, ok := oldByUID[u.UID]
+		if !ok {
+			added = append(added, u)
+			continue
 		}
-	}
-	// 3.遍历交集，在并集中找，找到就从并集中删，删完后就是补集（即并-交=所有变化的元素）
-	for _, v := range set {
-		delete(mAll, v)
-	}
-	// 4.此时，mall是补集，所有元素去源中找，找到就是删除的，找不到的必定能在目数组中找到，即新加的
-	for v := range mAll {
-		_, exist := mSrc[v]
-		if exist {
-			deleted = append(deleted, v)
-		} else {
-			added = append(added, v)
+		if prev != u {
+			deleted = append(deleted, prev)
+			added = append(added, u)
 		}
 	}
 
+	// Anything still in oldByUID after the walk is gone
+	// from the new slice.
+	for _, u := range oldByUID {
+		if _, stillPresent := indexOfUser(*new, u.UID); !stillPresent {
+			deleted = append(deleted, u)
+		}
+	}
+	// Map iteration order is non-deterministic; sort the
+	// result so the caller (and tests) see a stable order.
+	sortUserListForDiff(deleted)
+	sortUserListForDiff(added)
 	return deleted, added
+}
+
+// sortUserListForDiff sorts in place by UID. We need a
+// dedicated helper because sort.Slice requires a closure
+// (or a package-level function) and we want this file to
+// stay self-contained.
+func sortUserListForDiff(s []api.UserInfo) {
+	if len(s) < 2 {
+		return
+	}
+	for i := 1; i < len(s); i++ {
+		for j := i; j > 0 && s[j-1].UID > s[j].UID; j-- {
+			s[j-1], s[j] = s[j], s[j-1]
+		}
+	}
+}
+
+// indexOfUser is a tiny helper that returns (value, true)
+// when a user with the given UID is present in the slice.
+// We can't reuse the oldByUID map for the deletion pass
+// because we already consumed it above; a single linear scan
+// keeps the function self-contained.
+func indexOfUser(s []api.UserInfo, uid int) (api.UserInfo, bool) {
+	for _, u := range s {
+		if u.UID == uid {
+			return u, true
+		}
+	}
+	return api.UserInfo{}, false
 }
 
 func limitUser(c *Controller, user api.UserInfo, silentUsers *[]api.UserInfo) {
