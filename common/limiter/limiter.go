@@ -19,7 +19,7 @@ import (
 	"github.com/xtls/xray-core/common/errors"
 	"golang.org/x/time/rate"
 
-	"github.com/XrayR-project/XrayR/api"
+	"github.com/Starktomy/XrayR/api"
 )
 
 type UserInfo struct {
@@ -38,12 +38,18 @@ type InboundInfo struct {
 		config         *GlobalDeviceLimitConfig
 		globalOnlineIP *marshaler.Marshaler
 	}
+	// pushWG tracks the fire-and-forget goroutines that write the
+	// device-IP map back to the cache so Close() can wait for them
+	// instead of losing updates on shutdown.
+	pushWG sync.WaitGroup
 }
 
 type Limiter struct {
 	InboundInfo *sync.Map // Key: Tag, Value: *InboundInfo
 }
 
+// New returns a Limiter with an empty inbound map, ready
+// to receive AddInboundLimiter calls.
 func New() *Limiter {
 	return &Limiter{
 		InboundInfo: new(sync.Map),
@@ -125,7 +131,11 @@ func (l *Limiter) UpdateInboundLimiter(tag string, updatedUserList *[]api.UserIn
 }
 
 func (l *Limiter) DeleteInboundLimiter(tag string) error {
-	l.InboundInfo.Delete(tag)
+	if value, ok := l.InboundInfo.LoadAndDelete(tag); ok {
+		// Wait for any in-flight pushIP goroutines to finish so we
+		// don't race the next AddInboundLimiter call.
+		value.(*InboundInfo).pushWG.Wait()
+	}
 	return nil
 }
 
@@ -237,7 +247,11 @@ func globalLimit(inboundInfo *InboundInfo, email string, uid int, ip string, dev
 	if err != nil {
 		if _, ok := err.(*store.NotFound); ok {
 			// If the email is a new device
-			go pushIP(inboundInfo, uniqueKey, &map[string]int{ip: uid})
+			inboundInfo.pushWG.Add(1)
+			go func() {
+				defer inboundInfo.pushWG.Done()
+				pushIP(inboundInfo, uniqueKey, &map[string]int{ip: uid})
+			}()
 		} else {
 			errors.LogErrorInner(context.Background(), err, "cache service")
 		}
@@ -253,7 +267,11 @@ func globalLimit(inboundInfo *InboundInfo, email string, uid int, ip string, dev
 	// If the ip is not in cache
 	if _, ok := (*ipMap)[ip]; !ok {
 		(*ipMap)[ip] = uid
-		go pushIP(inboundInfo, uniqueKey, ipMap)
+		inboundInfo.pushWG.Add(1)
+		go func() {
+			defer inboundInfo.pushWG.Done()
+			pushIP(inboundInfo, uniqueKey, ipMap)
+		}()
 	}
 
 	return false

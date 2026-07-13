@@ -14,9 +14,9 @@ import (
 	"github.com/xtls/xray-core/proxy"
 	"github.com/xtls/xray-core/transport"
 
-	"github.com/XrayR-project/XrayR/api"
-	xrcommon "github.com/XrayR-project/XrayR/common"
-	"github.com/XrayR-project/XrayR/common/limiter"
+	"github.com/Starktomy/XrayR/api"
+	xrcommon "github.com/Starktomy/XrayR/common"
+	"github.com/Starktomy/XrayR/common/limiter"
 )
 
 func (c *Controller) removeInbound(tag string) error {
@@ -50,7 +50,7 @@ func (c *Controller) addInbound(config *core.InboundHandlerConfig) error {
 	}
 	handler, ok := rawHandler.(inbound.Handler)
 	if !ok {
-		return fmt.Errorf("not an InboundHandler: %s", err)
+		return fmt.Errorf("not an InboundHandler: %w", err)
 	}
 	if err := c.ibm.AddHandler(context.Background(), handler); err != nil {
 		return err
@@ -65,7 +65,7 @@ func (c *Controller) addOutbound(config *core.OutboundHandlerConfig) error {
 	}
 	handler, ok := rawHandler.(outbound.Handler)
 	if !ok {
-		return fmt.Errorf("not an InboundHandler: %s", err)
+		return fmt.Errorf("not an InboundHandler: %w", err)
 	}
 	// Wrap outbound handler to ensure downlink stats are always counted (e.g., REALITY/VLESS cases)
 	handler = &statsOutboundWrapper{Handler: handler, pm: c.pm, sm: c.stm}
@@ -78,7 +78,7 @@ func (c *Controller) addOutbound(config *core.OutboundHandlerConfig) error {
 func (c *Controller) addUsers(users []*protocol.User, tag string) error {
 	handler, err := c.ibm.GetHandler(context.Background(), tag)
 	if err != nil {
-		return fmt.Errorf("no such inbound tag: %s", err)
+		return fmt.Errorf("no such inbound tag: %w", err)
 	}
 	inboundInstance, ok := handler.(proxy.GetInbound)
 	if !ok {
@@ -98,15 +98,13 @@ func (c *Controller) addUsers(users []*protocol.User, tag string) error {
 		if err != nil {
 			return err
 		}
-		// Pre-register per-user traffic counters so core can increment them (downlink/uplink)
+		// Pre-register per-user traffic counters so core can increment them (downlink/uplink).
+		// Errors are intentionally ignored: a missing counter is non-fatal and
+		// stats.GetOrRegisterCounter will create the entry on first use anyway.
 		uName := "user>>>" + mUser.Email + ">>>traffic>>>uplink"
 		dName := "user>>>" + mUser.Email + ">>>traffic>>>downlink"
-		if _, _ = stats.GetOrRegisterCounter(c.stm, uName); true {
-			// no-op
-		}
-		if _, _ = stats.GetOrRegisterCounter(c.stm, dName); true {
-			// no-op
-		}
+		_, _ = stats.GetOrRegisterCounter(c.stm, uName)
+		_, _ = stats.GetOrRegisterCounter(c.stm, dName)
 	}
 	return nil
 }
@@ -114,7 +112,7 @@ func (c *Controller) addUsers(users []*protocol.User, tag string) error {
 func (c *Controller) removeUsers(users []string, tag string) error {
 	handler, err := c.ibm.GetHandler(context.Background(), tag)
 	if err != nil {
-		return fmt.Errorf("no such inbound tag: %s", err)
+		return fmt.Errorf("no such inbound tag: %w", err)
 	}
 	inboundInstance, ok := handler.(proxy.GetInbound)
 	if !ok {
@@ -123,7 +121,7 @@ func (c *Controller) removeUsers(users []string, tag string) error {
 
 	userManager, ok := inboundInstance.GetInbound().(proxy.UserManager)
 	if !ok {
-		return fmt.Errorf("handler %s is not implement proxy.UserManager", err)
+		return fmt.Errorf("handler %s is not implement proxy.UserManager: %w", tag, err)
 	}
 	for _, email := range users {
 		err = userManager.RemoveUser(context.Background(), email)

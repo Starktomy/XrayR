@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"regexp"
 
 	"github.com/xtls/xray-core/infra/conf"
@@ -11,6 +12,16 @@ const (
 	UserNotModified = "users not modified"
 	NodeNotModified = "node not modified"
 	RuleNotModified = "rules not modified"
+)
+
+// Sentinel errors for "resource not modified" responses. Prefer
+// these over the legacy string constants so callers can match
+// with errors.Is. The constants are kept for backward
+// compatibility with the message text returned in logs.
+var (
+	ErrUserNotModified = errors.New(UserNotModified)
+	ErrNodeNotModified = errors.New(NodeNotModified)
+	ErrRuleNotModified = errors.New(RuleNotModified)
 )
 
 // Config API config

@@ -7,10 +7,13 @@ import (
 	"github.com/xtls/xray-core/core"
 	"github.com/xtls/xray-core/infra/conf"
 
-	"github.com/XrayR-project/XrayR/api"
+	"github.com/Starktomy/XrayR/api"
 )
 
 // OutboundBuilder build freedom outbound config for addOutbound
+// OutboundBuilder builds a xray-core OutboundHandlerConfig from the
+// per-node nodeInfo and the controller Config. The tag is used to
+// label the resulting handler so the dispatcher can match it.
 func OutboundBuilder(config *Config, nodeInfo *api.NodeInfo, tag string) (*core.OutboundHandlerConfig, error) {
 	outboundDetourConfig := &conf.OutboundDetourConfig{}
 	outboundDetourConfig.Protocol = "freedom"
@@ -38,7 +41,7 @@ func OutboundBuilder(config *Config, nodeInfo *api.NodeInfo, tag string) (*core.
 	var setting json.RawMessage
 	setting, err := json.Marshal(proxySetting)
 	if err != nil {
-		return nil, fmt.Errorf("marshal proxy %s config failed: %s", nodeInfo.NodeType, err)
+		return nil, fmt.Errorf("marshal proxy %s config failed: %w", nodeInfo.NodeType, err)
 	}
 	outboundDetourConfig.Settings = &setting
 	return outboundDetourConfig.Build()

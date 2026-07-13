@@ -19,7 +19,7 @@ import (
 	"github.com/sagernet/sing-shadowsocks/shadowaead_2022"
 	C "github.com/sagernet/sing/common"
 
-	"github.com/XrayR-project/XrayR/api"
+	"github.com/Starktomy/XrayR/api"
 )
 
 // APIClient create an api client to the panel.
@@ -37,6 +37,26 @@ type APIClient struct {
 	ConfigResp    *simplejson.Json
 	access        sync.Mutex
 	eTags         map[string]string
+	eTagMu        sync.Mutex
+}
+
+// getETag returns the cached ETag for resource under c.eTagMu.
+func (c *APIClient) getETag(resource string) string {
+	c.eTagMu.Lock()
+	defer c.eTagMu.Unlock()
+	return c.eTags[resource]
+}
+
+// setETag stores the ETag for resource under c.eTagMu if it differs.
+func (c *APIClient) setETag(resource, value string) {
+	if value == "" {
+		return
+	}
+	c.eTagMu.Lock()
+	defer c.eTagMu.Unlock()
+	if c.eTags[resource] != value {
+		c.eTags[resource] = value
+	}
 }
 
 // New create an api instance
@@ -96,6 +116,7 @@ func readLocalRuleList(path string) (LocalRuleList []api.DetectRule) {
 			log.Printf("Error when opening file: %s", err)
 			return LocalRuleList
 		}
+		defer file.Close()
 
 		fileScanner := bufio.NewScanner(file)
 
@@ -108,7 +129,7 @@ func readLocalRuleList(path string) (LocalRuleList []api.DetectRule) {
 		}
 		// handle first encountered error while reading
 		if err := fileScanner.Err(); err != nil {
-			log.Fatalf("Error while reading file: %s", err)
+			log.Errorf("Error while reading rule list %s: %s", path, err)
 			return
 		}
 
@@ -123,23 +144,19 @@ func (c *APIClient) Describe() api.ClientInfo {
 	return api.ClientInfo{APIHost: c.APIHost, NodeID: c.NodeID, Key: c.Key, NodeType: c.NodeType}
 }
 
-// Debug set the client debug for client
-func (c *APIClient) Debug() {
-	c.client.SetDebug(true)
-}
 
 func (c *APIClient) assembleURL(path string) string {
-	return c.APIHost + path
+	return api.AssembleURLFunc(c.APIHost, path)
 }
 
 func (c *APIClient) parseResponse(res *resty.Response, path string, err error) (*simplejson.Json, error) {
 	if err != nil {
-		return nil, fmt.Errorf("request %s failed: %s", c.assembleURL(path), err)
+		return nil, fmt.Errorf("request %s failed: %w", c.assembleURL(path), err)
 	}
 
 	if res.StatusCode() > 400 {
 		body := res.Body()
-		return nil, fmt.Errorf("request %s failed: %s, %s", c.assembleURL(path), string(body), err)
+		return nil, fmt.Errorf("request %s failed: %s, body: %w", c.assembleURL(path), string(body), err)
 	}
 	rtn, err := simplejson.NewJson(res.Body())
 	if err != nil {
@@ -160,7 +177,7 @@ func (c *APIClient) GetNodeInfo() (nodeInfo *api.NodeInfo, err error) {
 		return nil, fmt.Errorf("unsupported Node type: %s", c.NodeType)
 	}
 	res, err := c.client.R().
-		SetHeader("If-None-Match", c.eTags["config"]).
+		SetHeader("If-None-Match", c.getETag("config")).
 		SetQueryParams(map[string]string{
 			"act":       "config",
 			"node_type": nodeType,
@@ -173,8 +190,8 @@ func (c *APIClient) GetNodeInfo() (nodeInfo *api.NodeInfo, err error) {
 		return nil, errors.New(api.NodeNotModified)
 	}
 	// update etag
-	if res.Header().Get("Etag") != "" && res.Header().Get("Etag") != c.eTags["config"] {
-		c.eTags["config"] = res.Header().Get("Etag")
+	if res.Header().Get("Etag") != "" && res.Header().Get("Etag") != c.getETag("config") {
+		c.setETag("config", res.Header().Get("Etag"))
 	}
 
 	response, err := c.parseResponse(res, "", err)
@@ -198,7 +215,7 @@ func (c *APIClient) GetNodeInfo() (nodeInfo *api.NodeInfo, err error) {
 
 	if err != nil {
 		res, _ := response.MarshalJSON()
-		return nil, fmt.Errorf("parse node info failed: %s, \nError: %s", string(res), err)
+		return nil, fmt.Errorf("parse node info failed: %s, error: %w", string(res), err)
 	}
 
 	return nodeInfo, nil
@@ -214,7 +231,7 @@ func (c *APIClient) GetUserList() (UserList *[]api.UserInfo, err error) {
 		return nil, fmt.Errorf("unsupported Node type: %s", c.NodeType)
 	}
 	res, err := c.client.R().
-		SetHeader("If-None-Match", c.eTags["user"]).
+		SetHeader("If-None-Match", c.getETag("user")).
 		SetQueryParams(map[string]string{
 			"act":       "user",
 			"node_type": nodeType,
@@ -227,8 +244,8 @@ func (c *APIClient) GetUserList() (UserList *[]api.UserInfo, err error) {
 		return nil, errors.New(api.UserNotModified)
 	}
 	// update etag
-	if res.Header().Get("Etag") != "" && res.Header().Get("Etag") != c.eTags["user"] {
-		c.eTags["user"] = res.Header().Get("Etag")
+	if res.Header().Get("Etag") != "" && res.Header().Get("Etag") != c.getETag("user") {
+		c.setETag("user", res.Header().Get("Etag"))
 	}
 
 	response, err := c.parseResponse(res, "", err)
@@ -305,6 +322,12 @@ func (c *APIClient) GetNodeRule() (*[]api.DetectRule, error) {
 	// fix: reuse config response
 	c.access.Lock()
 	defer c.access.Unlock()
+	// ConfigResp is only populated by GetNodeInfo. If a
+	// caller asks for the rules before that, return the
+	// local fallback rather than nil-deref on the parser.
+	if c.ConfigResp == nil {
+		return &ruleList, nil
+	}
 	ruleListResponse := c.ConfigResp.Get("routing").Get("rules").GetIndex(1).Get("domain").MustStringArray()
 	for i, rule := range ruleListResponse {
 		rule = strings.TrimPrefix(rule, "regexp:")

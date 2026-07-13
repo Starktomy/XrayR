@@ -19,7 +19,7 @@ import (
 	"github.com/xtls/xray-core/common/net"
 	"github.com/xtls/xray-core/infra/conf"
 
-	"github.com/XrayR-project/XrayR/api"
+	"github.com/Starktomy/XrayR/api"
 )
 
 // APIClient create an api client to the panel.
@@ -112,7 +112,7 @@ func readLocalRuleList(path string) (LocalRuleList []api.DetectRule) {
 		}
 		// handle first encountered error while reading
 		if err := fileScanner.Err(); err != nil {
-			log.Fatalf("Error while reading file: %s", err)
+			log.Errorf("Error while reading rule list %s: %s", path, err)
 			return
 		}
 	}
@@ -125,22 +125,18 @@ func (c *APIClient) Describe() api.ClientInfo {
 	return api.ClientInfo{APIHost: c.APIHost, NodeID: c.NodeID, Key: c.Key, NodeType: c.NodeType}
 }
 
-// Debug set the client debug for client
-func (c *APIClient) Debug() {
-	c.client.SetDebug(true)
-}
 
 func (c *APIClient) assembleURL(path string) string {
-	return c.APIHost + path
+	return api.AssembleURLFunc(c.APIHost, path)
 }
 
 func (c *APIClient) parseResponse(res *resty.Response, path string, err error) (*simplejson.Json, error) {
 	if err != nil {
-		return nil, fmt.Errorf("request %s failed: %v", c.assembleURL(path), err)
+		return nil, fmt.Errorf("request %s failed: %w", c.assembleURL(path), err)
 	}
 
 	if res.StatusCode() > 399 {
-		return nil, fmt.Errorf("request %s failed: %s, %v", c.assembleURL(path), res.String(), err)
+		return nil, fmt.Errorf("request %s failed: %s, body: %w", c.assembleURL(path), res.String(), err)
 	}
 
 	rtn, err := simplejson.NewJson(res.Body())
@@ -195,7 +191,7 @@ func (c *APIClient) GetNodeInfo() (nodeInfo *api.NodeInfo, err error) {
 	}
 
 	if err != nil {
-		return nil, fmt.Errorf("parse node info failed: %s, \nError: %v", res.String(), err)
+		return nil, fmt.Errorf("parse node info failed: %s, error: %w", res.String(), err)
 	}
 
 	return nodeInfo, nil
@@ -346,7 +342,11 @@ func (c *APIClient) parseSSNodeResponse(s *serverConfig) (*api.NodeInfo, error) 
 		h := simplejson.New()
 		h.Set("type", "http")
 		h.SetPath([]string{"request", "path"}, path)
-		header, _ = h.Encode()
+		encoded, err := h.Encode()
+		if err != nil {
+			return nil, fmt.Errorf("encode http request header: %w", err)
+		}
+		header = encoded
 	}
 	// Create GeneralNodeInfo
 	return &api.NodeInfo{
@@ -377,8 +377,8 @@ func (c *APIClient) parseV2rayNodeResponse(s *serverConfig) (*api.NodeInfo, erro
 	} else {
 		dest = s.VlessTlsSettings.Sni
 	}
-	if s.VlessTlsSettings.xVer != 0 {
-		xVer = s.VlessTlsSettings.xVer
+	if s.VlessTlsSettings.XVer != 0 {
+		xVer = s.VlessTlsSettings.XVer
 	} else {
 		xVer = 0
 	}

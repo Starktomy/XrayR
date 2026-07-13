@@ -99,7 +99,7 @@ jobs:
       CGO_ENABLED: 0
     steps:
       - name: Checkout codebase
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
       - name: Show workflow information
         id: get_filename
         run: |
@@ -109,9 +109,22 @@ jobs:
           echo "ASSET_NAME=$_NAME" >> $GITHUB_ENV
 
       - name: Set up Go
-        uses: actions/setup-go@v3
+        uses: actions/setup-go@v6
         with:
-          go-version: ^1.20
+          # Pin to 1.25.6 to match the toolchain declared in
+          # go.mod. The gvisor v0.0.0-20260109181451 release
+          # uses go:build go1.25 for the go1.25 source files
+          # and go:build go1.26 for the go1.26 ones, so the
+          # 1.25 toolchain compiles only the go1.25 files and
+          # the go1.26 ones are skipped. (The go1.26 build
+          # constraint is recognised by 1.25.x; it is simply
+          # not satisfied, which is the desired behaviour.)
+          # With go 1.26.x the go1.25 build tag is satisfied
+          # and BOTH files are compiled, redeclaring the
+          # WaitReason* constants — so do not switch to 1.26
+          # without also upgrading gvisor past
+          # v0.0.0-20260126202813.
+          go-version: '1.25.6'
 
       - name: Get project dependencies
         run: go mod download
@@ -133,7 +146,7 @@ jobs:
           mv XrayR XrayR.exe
 
       - name: Prepare to release
-        uses: nick-fields/retry@v2
+        uses: nick-fields/retry@v4
         with:
           timeout_minutes: 60
           retry_wait_seconds: 60
@@ -176,7 +189,7 @@ jobs:
         run: |
           mv build_assets XrayR-$ASSET_NAME
       - name: Upload files to Artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: XrayR-${{ steps.get_filename.outputs.ASSET_NAME }}
           path: |

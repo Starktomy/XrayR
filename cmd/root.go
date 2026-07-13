@@ -5,7 +5,6 @@ import (
 	"os"
 	"os/signal"
 	"path"
-	"runtime"
 	"strings"
 	"syscall"
 	"time"
@@ -16,7 +15,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 
-	"github.com/XrayR-project/XrayR/panel"
+	"github.com/Starktomy/XrayR/panel"
 )
 
 var (
@@ -59,7 +58,7 @@ func getConfig() *viper.Viper {
 	}
 
 	if err := config.ReadInConfig(); err != nil {
-		log.Panicf("Config file error: %s \n", err)
+		log.Fatalf("Config file error: %s \n", err)
 	}
 
 	config.WatchConfig() // Watch the config
@@ -73,7 +72,7 @@ func run() error {
 	config := getConfig()
 	panelConfig := &panel.Config{}
 	if err := config.Unmarshal(panelConfig); err != nil {
-		return fmt.Errorf("Parse config file %v failed: %s \n", cfgFile, err)
+		return fmt.Errorf("parse config file %v: %w", cfgFile, err)
 	}
 
 	if panelConfig.LogConfig.Level == "debug" {
@@ -88,34 +87,38 @@ func run() error {
 			// Hot reload function
 			fmt.Println("Config file changed:", e.Name)
 			p.Close()
-			// Delete old instance and trigger GC
-			runtime.GC()
 			if err := config.Unmarshal(panelConfig); err != nil {
-				log.Panicf("Parse config file %v failed: %s \n", cfgFile, err)
+				log.Errorf("Parse config file %v failed: %s \n", cfgFile, err)
+				return
 			}
 
 			if panelConfig.LogConfig.Level == "debug" {
 				log.SetReportCaller(true)
 			}
 
-			p.Start()
+			if err := p.Start(); err != nil {
+				log.Errorf("Reload failed: %s", err)
+			}
 			lastTime = time.Now()
 		}
 	})
 
-	p.Start()
+	if err := p.Start(); err != nil {
+		return err
+	}
 	defer p.Close()
 
-	// Explicitly triggering GC to remove garbage from config loading.
-	runtime.GC()
-	// Running backend
+	// Running backend — wait for SIGINT/SIGTERM (os.Kill can't be caught).
 	osSignals := make(chan os.Signal, 1)
-	signal.Notify(osSignals, os.Interrupt, os.Kill, syscall.SIGTERM)
+	signal.Notify(osSignals, os.Interrupt, syscall.SIGTERM)
 	<-osSignals
 
 	return nil
 }
 
+// Execute runs the cobra root command and returns its
+// error. The root command blocks on SIGINT/SIGTERM and
+// returns nil on graceful shutdown.
 func Execute() error {
 	return rootCmd.Execute()
 }

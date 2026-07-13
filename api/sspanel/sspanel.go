@@ -17,7 +17,7 @@ import (
 
 	"github.com/go-resty/resty/v2"
 
-	"github.com/XrayR-project/XrayR/api"
+	"github.com/Starktomy/XrayR/api"
 )
 
 var (
@@ -43,6 +43,26 @@ type APIClient struct {
 	access              sync.Mutex
 	version             string
 	eTags               map[string]string
+	eTagMu              sync.Mutex // guards concurrent eTags access
+}
+
+// getETag returns the cached ETag for resource under c.eTagMu.
+func (c *APIClient) getETag(resource string) string {
+	c.eTagMu.Lock()
+	defer c.eTagMu.Unlock()
+	return c.eTags[resource]
+}
+
+// setETag stores the ETag for resource under c.eTagMu if it differs.
+func (c *APIClient) setETag(resource, value string) {
+	if value == "" {
+		return
+	}
+	c.eTagMu.Lock()
+	defer c.eTagMu.Unlock()
+	if c.eTags[resource] != value {
+		c.eTags[resource] = value
+	}
 }
 
 // New create api instance
@@ -119,7 +139,7 @@ func readLocalRuleList(path string) (LocalRuleList []api.DetectRule) {
 		}
 		// handle first encountered error while reading
 		if err := fileScanner.Err(); err != nil {
-			log.Fatalf("Error while reading file: %s", err)
+			log.Errorf("Error while reading rule list %s: %s", path, err)
 			return
 		}
 	}
@@ -132,23 +152,19 @@ func (c *APIClient) Describe() api.ClientInfo {
 	return api.ClientInfo{APIHost: c.APIHost, NodeID: c.NodeID, Key: c.Key, NodeType: c.NodeType}
 }
 
-// Debug set the client debug for client
-func (c *APIClient) Debug() {
-	c.client.SetDebug(true)
-}
 
 func (c *APIClient) assembleURL(path string) string {
 	return c.APIHost + path
 }
 
 func (c *APIClient) parseResponse(res *resty.Response, path string, err error) (*Response, error) {
-	if err != nil {
-		return nil, fmt.Errorf("request %s failed: %s", c.assembleURL(path), err)
+	if cerr := api.CheckResponse(res, c.assembleURL(path), err); cerr != nil {
+		return nil, cerr
 	}
 
 	if res.StatusCode() > 400 {
 		body := res.Body()
-		return nil, fmt.Errorf("request %s failed: %s, %v", c.assembleURL(path), string(body), err)
+		return nil, fmt.Errorf("request %s failed: %s", c.assembleURL(path), string(body))
 	}
 	response := res.Result().(*Response)
 
@@ -164,7 +180,7 @@ func (c *APIClient) GetNodeInfo() (nodeInfo *api.NodeInfo, err error) {
 	path := fmt.Sprintf("/mod_mu/nodes/%d/info", c.NodeID)
 	res, err := c.client.R().
 		SetResult(&Response{}).
-		SetHeader("If-None-Match", c.eTags["node"]).
+		SetHeader("If-None-Match", c.getETag("node")).
 		ForceContentType("application/json").
 		Get(path)
 	// Etag identifier for a specific version of a resource. StatusCode = 304 means no changed
@@ -172,8 +188,8 @@ func (c *APIClient) GetNodeInfo() (nodeInfo *api.NodeInfo, err error) {
 		return nil, errors.New(api.NodeNotModified)
 	}
 
-	if res.Header().Get("ETag") != "" && res.Header().Get("ETag") != c.eTags["node"] {
-		c.eTags["node"] = res.Header().Get("ETag")
+	if res.Header().Get("ETag") != "" && res.Header().Get("ETag") != c.getETag("node") {
+		c.setETag("node", res.Header().Get("ETag"))
 	}
 
 	response, err := c.parseResponse(res, path, err)
@@ -184,7 +200,7 @@ func (c *APIClient) GetNodeInfo() (nodeInfo *api.NodeInfo, err error) {
 	nodeInfoResponse := new(NodeInfoResponse)
 
 	if err := json.Unmarshal(response.Data, nodeInfoResponse); err != nil {
-		return nil, fmt.Errorf("unmarshal %s failed: %s", reflect.TypeOf(nodeInfoResponse), err)
+		return nil, fmt.Errorf("unmarshal %s: %w", reflect.TypeOf(nodeInfoResponse), err)
 	}
 
 	// determine ssPanel version, if disable custom config or version < 2021.11, then use old api
@@ -215,13 +231,13 @@ func (c *APIClient) GetNodeInfo() (nodeInfo *api.NodeInfo, err error) {
 		nodeInfo, err = c.ParseSSPanelNodeInfo(nodeInfoResponse)
 		if err != nil {
 			res, _ := json.Marshal(nodeInfoResponse)
-			return nil, fmt.Errorf("parse node info failed: %s, \nError: %s, \nPlease check the doc of custom_config for help: https://xrayr-project.github.io/XrayR-doc/dui-jie-sspanel/sspanel/sspanel_custom_config", string(res), err)
+			return nil, fmt.Errorf("parse node info failed: %s, error: %w (see https://xrayr-project.github.io/XrayR-doc/dui-jie-sspanel/sspanel/sspanel_custom_config)", string(res), err)
 		}
 	}
 
 	if err != nil {
 		res, _ := json.Marshal(nodeInfoResponse)
-		return nil, fmt.Errorf("parse node info failed: %s, \nError: %s", string(res), err)
+		return nil, fmt.Errorf("parse node info failed: %s, error: %w", string(res), err)
 	}
 
 	return nodeInfo, nil
@@ -232,7 +248,7 @@ func (c *APIClient) GetUserList() (UserList *[]api.UserInfo, err error) {
 	path := "/mod_mu/users"
 	res, err := c.client.R().
 		SetQueryParam("node_id", strconv.Itoa(c.NodeID)).
-		SetHeader("If-None-Match", c.eTags["users"]).
+		SetHeader("If-None-Match", c.getETag("users")).
 		SetResult(&Response{}).
 		ForceContentType("application/json").
 		Get(path)
@@ -241,8 +257,8 @@ func (c *APIClient) GetUserList() (UserList *[]api.UserInfo, err error) {
 		return nil, errors.New(api.UserNotModified)
 	}
 
-	if res.Header().Get("ETag") != "" && res.Header().Get("ETag") != c.eTags["users"] {
-		c.eTags["users"] = res.Header().Get("ETag")
+	if res.Header().Get("ETag") != "" && res.Header().Get("ETag") != c.getETag("users") {
+		c.setETag("users", res.Header().Get("ETag"))
 	}
 
 	response, err := c.parseResponse(res, path, err)
@@ -253,7 +269,7 @@ func (c *APIClient) GetUserList() (UserList *[]api.UserInfo, err error) {
 	userListResponse := new([]UserResponse)
 
 	if err := json.Unmarshal(response.Data, userListResponse); err != nil {
-		return nil, fmt.Errorf("unmarshal %s failed: %s", reflect.TypeOf(userListResponse), err)
+		return nil, fmt.Errorf("unmarshal %s: %w", reflect.TypeOf(userListResponse), err)
 	}
 	userList, err := c.ParseUserListResponse(userListResponse)
 	if err != nil {
@@ -349,7 +365,7 @@ func (c *APIClient) GetNodeRule() (*[]api.DetectRule, error) {
 	path := "/mod_mu/func/detect_rules"
 	res, err := c.client.R().
 		SetResult(&Response{}).
-		SetHeader("If-None-Match", c.eTags["rules"]).
+		SetHeader("If-None-Match", c.getETag("rules")).
 		ForceContentType("application/json").
 		Get(path)
 
@@ -358,8 +374,8 @@ func (c *APIClient) GetNodeRule() (*[]api.DetectRule, error) {
 		return nil, errors.New(api.RuleNotModified)
 	}
 
-	if res.Header().Get("ETag") != "" && res.Header().Get("ETag") != c.eTags["rules"] {
-		c.eTags["rules"] = res.Header().Get("ETag")
+	if res.Header().Get("ETag") != "" && res.Header().Get("ETag") != c.getETag("rules") {
+		c.setETag("rules", res.Header().Get("ETag"))
 	}
 
 	response, err := c.parseResponse(res, path, err)
@@ -370,7 +386,7 @@ func (c *APIClient) GetNodeRule() (*[]api.DetectRule, error) {
 	ruleListResponse := new([]RuleItem)
 
 	if err := json.Unmarshal(response.Data, ruleListResponse); err != nil {
-		return nil, fmt.Errorf("unmarshal %s failed: %s", reflect.TypeOf(ruleListResponse), err)
+		return nil, fmt.Errorf("unmarshal %s: %w", reflect.TypeOf(ruleListResponse), err)
 	}
 
 	for _, r := range *ruleListResponse {
@@ -475,7 +491,7 @@ func (c *APIClient) ParseV2rayNodeResponse(nodeInfoResponse *NodeInfoResponse) (
 	}
 
 	if err != nil {
-		return nil, fmt.Errorf("marshal Header Type %s into config failed: %s", header, err)
+		return nil, fmt.Errorf("marshal Header Type %s into config: %w", header, err)
 	}
 
 	// Create GeneralNodeInfo
@@ -518,7 +534,7 @@ func (c *APIClient) ParseSSNodeResponse(nodeInfoResponse *NodeInfoResponse) (*ap
 	userListResponse := new([]UserResponse)
 
 	if err := json.Unmarshal(response.Data, userListResponse); err != nil {
-		return nil, fmt.Errorf("unmarshal %s failed: %s", reflect.TypeOf(userListResponse), err)
+		return nil, fmt.Errorf("unmarshal %s: %w", reflect.TypeOf(userListResponse), err)
 	}
 
 	// init server port

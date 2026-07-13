@@ -14,7 +14,7 @@ import (
 
 	"github.com/go-resty/resty/v2"
 
-	"github.com/XrayR-project/XrayR/api"
+	"github.com/Starktomy/XrayR/api"
 )
 
 // APIClient create a api client to the panel.
@@ -79,6 +79,7 @@ func readLocalRuleList(path string) (LocalRuleList []api.DetectRule) {
 			log.Printf("Error when opening file: %s", err)
 			return LocalRuleList
 		}
+		defer file.Close()
 
 		fileScanner := bufio.NewScanner(file)
 
@@ -91,7 +92,7 @@ func readLocalRuleList(path string) (LocalRuleList []api.DetectRule) {
 		}
 		// handle first encountered error while reading
 		if err := fileScanner.Err(); err != nil {
-			log.Fatalf("Error while reading file: %s", err)
+			log.Errorf("Error while reading rule list %s: %s", path, err)
 			return
 		}
 
@@ -106,10 +107,6 @@ func (c *APIClient) Describe() api.ClientInfo {
 	return api.ClientInfo{APIHost: c.APIHost, NodeID: c.NodeID, Key: c.Key, NodeType: c.NodeType}
 }
 
-// Debug set the client debug for client
-func (c *APIClient) Debug() {
-	c.client.SetDebug(true)
-}
 
 func (c *APIClient) assembleURL(path string) string {
 	return c.APIHost + path
@@ -124,13 +121,13 @@ func (c *APIClient) createCommonRequest() *resty.Request {
 }
 
 func (c *APIClient) parseResponse(res *resty.Response, path string, err error) (*Response, error) {
-	if err != nil {
-		return nil, fmt.Errorf("request %s failed: %s", c.assembleURL(path), err)
+	if cerr := api.CheckResponse(res, c.assembleURL(path), err); cerr != nil {
+		return nil, cerr
 	}
 
 	if res.StatusCode() > 400 {
 		body := res.Body()
-		return nil, fmt.Errorf("request %s failed: %s, %s", c.assembleURL(path), string(body), err)
+		return nil, fmt.Errorf("request %s failed: %s", c.assembleURL(path), string(body))
 	}
 	response := res.Result().(*Response)
 
@@ -178,7 +175,7 @@ func (c *APIClient) GetNodeInfo() (nodeInfo *api.NodeInfo, err error) {
 
 	if err != nil {
 		res, _ := json.Marshal(response.Data)
-		return nil, fmt.Errorf("parse node info failed: %s, \nError: %s", string(res), err)
+		return nil, fmt.Errorf("parse node info failed: %s, error: %w", string(res), err)
 	}
 
 	return nodeInfo, nil
@@ -356,7 +353,7 @@ func (c *APIClient) GetNodeRule() (*[]api.DetectRule, error) {
 	ruleListResponse := new(NodeRule)
 
 	if err := json.Unmarshal(response.Data, ruleListResponse); err != nil {
-		return nil, fmt.Errorf("unmarshal %s failed: %s", reflect.TypeOf(ruleListResponse), err)
+		return nil, fmt.Errorf("unmarshal %s: %w", reflect.TypeOf(ruleListResponse), err)
 	}
 	ruleList := c.LocalRuleList
 	// Only support reject rule type
@@ -417,7 +414,7 @@ func (c *APIClient) ParseV2rayNodeResponse(nodeInfoResponse *json.RawMessage) (*
 
 	v2rayNodeInfo := new(V2rayNodeInfo)
 	if err := json.Unmarshal(*nodeInfoResponse, v2rayNodeInfo); err != nil {
-		return nil, fmt.Errorf("unmarshal %s failed: %s", reflect.TypeOf(*nodeInfoResponse), err)
+		return nil, fmt.Errorf("unmarshal %s: %w", reflect.TypeOf(*nodeInfoResponse), err)
 	}
 
 	if c.SpeedLimit > 0 {
@@ -454,7 +451,7 @@ func (c *APIClient) ParseSSNodeResponse(nodeInfoResponse *json.RawMessage) (*api
 	var speedLimit uint64 = 0
 	shadowsocksNodeInfo := new(ShadowsocksNodeInfo)
 	if err := json.Unmarshal(*nodeInfoResponse, shadowsocksNodeInfo); err != nil {
-		return nil, fmt.Errorf("unmarshal %s failed: %s", reflect.TypeOf(*nodeInfoResponse), err)
+		return nil, fmt.Errorf("unmarshal %s: %w", reflect.TypeOf(*nodeInfoResponse), err)
 	}
 	if c.SpeedLimit > 0 {
 		speedLimit = uint64((c.SpeedLimit * 1000000) / 8)
@@ -484,7 +481,7 @@ func (c *APIClient) ParseTrojanNodeResponse(nodeInfoResponse *json.RawMessage) (
 
 	trojanNodeInfo := new(TrojanNodeInfo)
 	if err := json.Unmarshal(*nodeInfoResponse, trojanNodeInfo); err != nil {
-		return nil, fmt.Errorf("unmarshal %s failed: %s", reflect.TypeOf(*nodeInfoResponse), err)
+		return nil, fmt.Errorf("unmarshal %s: %w", reflect.TypeOf(*nodeInfoResponse), err)
 	}
 	if c.SpeedLimit > 0 {
 		speedLimit = uint64((c.SpeedLimit * 1000000) / 8)
@@ -515,7 +512,7 @@ func (c *APIClient) ParseV2rayUserListResponse(userInfoResponse *json.RawMessage
 
 	vmessUserList := new([]*VMessUser)
 	if err := json.Unmarshal(*userInfoResponse, vmessUserList); err != nil {
-		return nil, fmt.Errorf("unmarshal %s failed: %s", reflect.TypeOf(*userInfoResponse), err)
+		return nil, fmt.Errorf("unmarshal %s: %w", reflect.TypeOf(*userInfoResponse), err)
 	}
 
 	userList := make([]api.UserInfo, len(*vmessUserList))
@@ -543,7 +540,7 @@ func (c *APIClient) ParseTrojanUserListResponse(userInfoResponse *json.RawMessag
 
 	trojanUserList := new([]*TrojanUser)
 	if err := json.Unmarshal(*userInfoResponse, trojanUserList); err != nil {
-		return nil, fmt.Errorf("unmarshal %s failed: %s", reflect.TypeOf(*userInfoResponse), err)
+		return nil, fmt.Errorf("unmarshal %s: %w", reflect.TypeOf(*userInfoResponse), err)
 	}
 
 	userList := make([]api.UserInfo, len(*trojanUserList))
@@ -571,7 +568,7 @@ func (c *APIClient) ParseSSUserListResponse(userInfoResponse *json.RawMessage) (
 
 	ssUserList := new([]*SSUser)
 	if err := json.Unmarshal(*userInfoResponse, ssUserList); err != nil {
-		return nil, fmt.Errorf("unmarshal %s failed: %s", reflect.TypeOf(*userInfoResponse), err)
+		return nil, fmt.Errorf("unmarshal %s: %w", reflect.TypeOf(*userInfoResponse), err)
 	}
 
 	userList := make([]api.UserInfo, len(*ssUserList))

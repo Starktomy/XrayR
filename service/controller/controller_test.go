@@ -1,81 +1,114 @@
-package controller_test
+package controller
 
 import (
-	"fmt"
-	"os"
-	"os/signal"
-	"runtime"
-	"syscall"
+	"reflect"
 	"testing"
 
-	"github.com/xtls/xray-core/core"
-	"github.com/xtls/xray-core/infra/conf"
-
-	"github.com/XrayR-project/XrayR/api"
-	"github.com/XrayR-project/XrayR/api/sspanel"
-	_ "github.com/XrayR-project/XrayR/cmd/distro/all"
-	"github.com/XrayR-project/XrayR/common/mylego"
-	. "github.com/XrayR-project/XrayR/service/controller"
+	"github.com/Starktomy/XrayR/api"
 )
 
-func TestController(t *testing.T) {
-	serverConfig := &conf.Config{
-		Stats:     &conf.StatsConfig{},
-		LogConfig: &conf.LogConfig{LogLevel: "debug"},
+func TestCompareUserListEmpty(t *testing.T) {
+	old := &[]api.UserInfo{}
+	new := &[]api.UserInfo{}
+	deleted, added := compareUserList(old, new)
+	if len(deleted) != 0 || len(added) != 0 {
+		t.Errorf("expected no diff on empty input, got deleted=%v added=%v", deleted, added)
 	}
-	policyConfig := &conf.PolicyConfig{}
-	policyConfig.Levels = map[uint32]*conf.Policy{0: {
-		StatsUserUplink:   true,
-		StatsUserDownlink: true,
-	}}
-	serverConfig.Policy = policyConfig
-	config, _ := serverConfig.Build()
+}
 
-	// config := &core.Config{
-	// 	App: []*serial.TypedMessage{
-	// 		serial.ToTypedMessage(&dispatcher.Config{}),
-	// 		serial.ToTypedMessage(&proxyman.InboundConfig{}),
-	// 		serial.ToTypedMessage(&proxyman.OutboundConfig{}),
-	// 		serial.ToTypedMessage(&stats.Config{}),
-	// 	}}
+func TestCompareUserListAllAdded(t *testing.T) {
+	old := &[]api.UserInfo{}
+	new := &[]api.UserInfo{
+		{UID: 1, Email: "alice@x"},
+		{UID: 2, Email: "bob@x"},
+	}
+	_, added := compareUserList(old, new)
+	if !reflect.DeepEqual(added, *new) {
+		t.Errorf("expected all-new users to be reported as added, got %v", added)
+	}
+}
 
-	server, err := core.New(config)
-	defer server.Close()
-	if err != nil {
-		t.Errorf("failed to create instance: %s", err)
+func TestCompareUserListAllDeleted(t *testing.T) {
+	old := &[]api.UserInfo{
+		{UID: 1, Email: "alice@x"},
+		{UID: 2, Email: "bob@x"},
 	}
-	if err = server.Start(); err != nil {
-		t.Errorf("Failed to start instance: %s", err)
+	new := &[]api.UserInfo{}
+	deleted, _ := compareUserList(old, new)
+	if !reflect.DeepEqual(deleted, *old) {
+		t.Errorf("expected all-old users to be reported as deleted, got %v", deleted)
 	}
-	certConfig := &mylego.CertConfig{
-		CertMode:   "http",
-		CertDomain: "test.ss.tk",
-		Provider:   "alidns",
-		Email:      "ss@ss.com",
-	}
-	controlerConfig := &Config{
-		UpdatePeriodic: 5,
-		CertConfig:     certConfig,
-	}
-	apiConfig := &api.Config{
-		APIHost:  "http://127.0.0.1:667",
-		Key:      "123",
-		NodeID:   41,
-		NodeType: "V2ray",
-	}
-	apiClient := sspanel.New(apiConfig)
-	c := New(server, apiClient, controlerConfig, "SSpanel")
-	fmt.Println("Sleep 1s")
-	err = c.Start()
-	if err != nil {
-		t.Error(err)
-	}
-	// Explicitly triggering GC to remove garbage from config loading.
-	runtime.GC()
+}
 
-	{
-		osSignals := make(chan os.Signal, 1)
-		signal.Notify(osSignals, os.Interrupt, os.Kill, syscall.SIGTERM)
-		<-osSignals
+func TestCompareUserListNoChange(t *testing.T) {
+	users := []api.UserInfo{
+		{UID: 1, Email: "alice@x"},
+		{UID: 2, Email: "bob@x"},
+		{UID: 3, Email: "carol@x"},
+	}
+	old := &users
+	new := &[]api.UserInfo{
+		{UID: 1, Email: "alice@x"},
+		{UID: 2, Email: "bob@x"},
+		{UID: 3, Email: "carol@x"},
+	}
+	deleted, added := compareUserList(old, new)
+	if len(deleted) != 0 || len(added) != 0 {
+		t.Errorf("expected no diff on identical input, got deleted=%v added=%v", deleted, added)
+	}
+}
+
+func TestCompareUserListMixedDiff(t *testing.T) {
+	old := &[]api.UserInfo{
+		{UID: 1, Email: "alice@x", SpeedLimit: 100},
+		{UID: 2, Email: "bob@x"},
+		{UID: 3, Email: "carol@x", SpeedLimit: 100},
+	}
+	new := &[]api.UserInfo{
+		// alice unchanged
+		{UID: 1, Email: "alice@x", SpeedLimit: 100},
+		// bob removed
+		// carol's SpeedLimit changed -> should appear as
+		// delete + add (matches pre-existing behaviour)
+		{UID: 3, Email: "carol@x", SpeedLimit: 200},
+		// dan added
+		{UID: 4, Email: "dan@x"},
+	}
+	deleted, added := compareUserList(old, new)
+	wantDeleted := []api.UserInfo{
+		{UID: 2, Email: "bob@x"},
+		{UID: 3, Email: "carol@x", SpeedLimit: 100},
+	}
+	wantAdded := []api.UserInfo{
+		{UID: 3, Email: "carol@x", SpeedLimit: 200},
+		{UID: 4, Email: "dan@x"},
+	}
+	if !reflect.DeepEqual(deleted, wantDeleted) {
+		t.Errorf("deleted: got %v, want %v", deleted, wantDeleted)
+	}
+	if !reflect.DeepEqual(added, wantAdded) {
+		t.Errorf("added: got %v, want %v", added, wantAdded)
+	}
+}
+
+func TestCompareUserListUnsorted(t *testing.T) {
+	// The algorithm sorts internally, so input order must
+	// not matter. Provide both lists in a different order
+	// than the algorithm would produce and confirm the diff
+	// is the same.
+	old := &[]api.UserInfo{
+		{UID: 3, Email: "carol@x"},
+		{UID: 1, Email: "alice@x"},
+	}
+	new := &[]api.UserInfo{
+		{UID: 4, Email: "dan@x"},
+		{UID: 1, Email: "alice@x"},
+	}
+	deleted, added := compareUserList(old, new)
+	if len(deleted) != 1 || deleted[0].UID != 3 {
+		t.Errorf("deleted: got %v", deleted)
+	}
+	if len(added) != 1 || added[0].UID != 4 {
+		t.Errorf("added: got %v", added)
 	}
 }

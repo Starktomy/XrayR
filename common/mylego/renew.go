@@ -3,6 +3,7 @@ package mylego
 import (
 	"crypto"
 	"crypto/x509"
+	"fmt"
 	"time"
 
 	log "github.com/sirupsen/logrus"
@@ -13,11 +14,20 @@ import (
 )
 
 func (l *LegoCMD) Renew() (bool, error) {
-	account, client := setup(NewAccountsStorage(l))
-	setupChallenges(l, client)
+	accountsStorage, err := NewAccountsStorage(l)
+	if err != nil {
+		return false, err
+	}
+	account, client, err := setup(accountsStorage)
+	if err != nil {
+		return false, err
+	}
+	if err := setupChallenges(l, client); err != nil {
+		return false, err
+	}
 
 	if account.Registration == nil {
-		log.Panicf("Account %s is not registered. Use 'run' to register a new account.\n", account.Email)
+		return false, fmt.Errorf("account %s is not registered. Use 'run' to register a new account", account.Email)
 	}
 
 	return renewForDomains(l.C.CertDomain, client, NewCertificatesStorage(l.path))
@@ -29,12 +39,16 @@ func renewForDomains(domain string, client *lego.Client, certsStorage *Certifica
 	// as web servers would not be able to work with a combined file.
 	certificates, err := certsStorage.ReadCertificate(domain, ".crt")
 	if err != nil {
-		log.Panicf("Error while loading the certificate for domain %s\n\t%v", domain, err)
+		return false, fmt.Errorf("load certificate for domain %s: %w", domain, err)
 	}
 
 	cert := certificates[0]
 
-	if !needRenewal(cert, domain, 30) {
+	need, err := needRenewal(cert, domain, 30)
+	if err != nil {
+		return false, err
+	}
+	if !need {
 		return false, nil
 	}
 
@@ -52,7 +66,7 @@ func renewForDomains(domain string, client *lego.Client, certsStorage *Certifica
 	}
 	certRes, err := client.Certificate.Obtain(request)
 	if err != nil {
-		log.Panic(err)
+		return false, fmt.Errorf("obtain renewed certificate: %w", err)
 	}
 
 	certsStorage.SaveResource(certRes)
@@ -60,9 +74,9 @@ func renewForDomains(domain string, client *lego.Client, certsStorage *Certifica
 	return true, nil
 }
 
-func needRenewal(x509Cert *x509.Certificate, domain string, days int) bool {
+func needRenewal(x509Cert *x509.Certificate, domain string, days int) (bool, error) {
 	if x509Cert.IsCA {
-		log.Panicf("[%s] Certificate bundle starts with a CA certificate", domain)
+		return false, fmt.Errorf("[%s] certificate bundle starts with a CA certificate", domain)
 	}
 
 	if days >= 0 {
@@ -70,9 +84,9 @@ func needRenewal(x509Cert *x509.Certificate, domain string, days int) bool {
 		if notAfter > days {
 			log.Printf("[%s] The certificate expires in %d days, the number of days defined to perform the renewal is %d: no renewal.",
 				domain, notAfter, days)
-			return false
+			return false, nil
 		}
 	}
 
-	return true
+	return true, nil
 }

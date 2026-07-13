@@ -27,9 +27,9 @@ import (
 	"github.com/xtls/xray-core/transport"
 	"github.com/xtls/xray-core/transport/pipe"
 
-	xrcommon "github.com/XrayR-project/XrayR/common"
-	"github.com/XrayR-project/XrayR/common/limiter"
-	"github.com/XrayR-project/XrayR/common/rule"
+	xrcommon "github.com/Starktomy/XrayR/common"
+	"github.com/Starktomy/XrayR/common/limiter"
+	"github.com/Starktomy/XrayR/common/rule"
 )
 
 var errSniffingTimeout = newError("timeout on sniffing")
@@ -43,8 +43,18 @@ type cachedReader struct {
 func (r *cachedReader) Cache(b *buf.Buffer) {
 	mb, _ := r.reader.ReadMultiBufferTimeout(time.Millisecond * 100)
 	r.Lock()
+	defer r.Unlock()
 	if !mb.IsEmpty() {
-		r.cache, _ = buf.MergeMulti(r.cache, mb)
+		merged, err := buf.MergeMulti(r.cache, mb)
+		if err != nil {
+			// Fall back to the original cache rather than discarding
+			// the bytes we just read. A merge failure usually means a
+			// buffer pool mismatch, which the next successful read
+			// will repair naturally.
+			errors.LogError(context.Background(), "merge multi buffer: ", err)
+		} else {
+			r.cache = merged
+		}
 	}
 	b.Clear()
 	rawBytes := b.Extend(buf.Size)
@@ -261,7 +271,7 @@ func (d *DefaultDispatcher) shouldOverride(ctx context.Context, result SniffResu
 // Dispatch implements routing.Dispatcher.
 func (d *DefaultDispatcher) Dispatch(ctx context.Context, destination net.Destination) (*transport.Link, error) {
 	if !destination.IsValid() {
-		panic("Dispatcher: Invalid destination.")
+		return nil, newError("Dispatcher: Invalid destination.")
 	}
 	outbounds := session.OutboundsFromContext(ctx)
 	if len(outbounds) == 0 {
@@ -415,10 +425,9 @@ func (d *DefaultDispatcher) routedDispatch(ctx context.Context, link *transport.
 	// Check if domain and protocol hit the rule
 	sessionInbound := session.InboundFromContext(ctx)
 	// Whether the inbound connection contains a user
-	if sessionInbound.User != nil {
+	if sessionInbound != nil && sessionInbound.User != nil {
 		if d.RuleManager.Detect(sessionInbound.Tag, destination.String(), sessionInbound.User.Email) {
 			errors.LogError(ctx, fmt.Sprintf("User %s access %s reject by rule", sessionInbound.User.Email, destination.String()))
-			newError("destination is reject by rule")
 			common.Close(link.Writer)
 			common.Interrupt(link.Reader)
 			return

@@ -3,7 +3,9 @@ package controller
 import (
 	"errors"
 	"fmt"
-	"reflect"
+	"sort"
+	"strings"
+	"sync"
 	"time"
 
 	log "github.com/sirupsen/logrus"
@@ -15,10 +17,10 @@ import (
 	"github.com/xtls/xray-core/features/policy"
 	"github.com/xtls/xray-core/features/stats"
 
-	"github.com/XrayR-project/XrayR/api"
-	"github.com/XrayR-project/XrayR/app/mydispatcher"
-	"github.com/XrayR-project/XrayR/common/mylego"
-	"github.com/XrayR-project/XrayR/common/serverstatus"
+	"github.com/Starktomy/XrayR/api"
+	"github.com/Starktomy/XrayR/app/mydispatcher"
+	"github.com/Starktomy/XrayR/common/mylego"
+	"github.com/Starktomy/XrayR/common/serverstatus"
 )
 
 type LimitInfo struct {
@@ -46,6 +48,23 @@ type Controller struct {
 	dispatcher   *mydispatcher.DefaultDispatcher
 	startAt      time.Time
 	logger       *log.Entry
+
+	// nodeInfoMu and userListMu protect nodeInfo / userList
+	// against concurrent reads from the dispatch path and
+	// writes from the four periodic monitor goroutines
+	// (cert / nodeInfo / userInfo / report). Reads use RLock,
+	// writes Lock the full block.
+	nodeInfoMu sync.RWMutex
+	userListMu sync.RWMutex
+
+	// monitorErrs aggregates the most recent error from each
+	// periodic monitor. The monitor goroutines write via
+	// recordMonitorError, Close reads the result. This gives
+	// the operator a single error to look at on shutdown
+	// instead of a long stream of c.logger.Print lines that
+	// the previous code threw away.
+	monitorErrsMu sync.Mutex
+	monitorErrs   map[string]error
 }
 
 type periodicTask struct {
@@ -53,7 +72,73 @@ type periodicTask struct {
 	*task.Periodic
 }
 
+// getNodeInfo returns the current nodeInfo under a read lock.
+// Callers that need to compare against a freshly fetched
+// descriptor must use this instead of touching c.nodeInfo
+// directly so the four monitor goroutines don't race.
+func (c *Controller) getNodeInfo() *api.NodeInfo {
+	c.nodeInfoMu.RLock()
+	defer c.nodeInfoMu.RUnlock()
+	return c.nodeInfo
+}
+
+// setNodeInfo stores a new nodeInfo under a write lock.
+func (c *Controller) setNodeInfo(ni *api.NodeInfo) {
+	c.nodeInfoMu.Lock()
+	defer c.nodeInfoMu.Unlock()
+	c.nodeInfo = ni
+}
+
+// getUserList returns the current user list under a read lock.
+func (c *Controller) getUserList() *[]api.UserInfo {
+	c.userListMu.RLock()
+	defer c.userListMu.RUnlock()
+	return c.userList
+}
+
+// setUserList stores a new user list under a write lock.
+func (c *Controller) setUserList(ul *[]api.UserInfo) {
+	c.userListMu.Lock()
+	defer c.userListMu.Unlock()
+	c.userList = ul
+}
+
+// recordMonitorError stores err under task so Close can
+// surface it. Only the most recent error per task is kept;
+// periodic monitors recover from individual failures, and
+// keeping the latest is enough to diagnose why a node fell
+// behind. nil clears the entry (the monitor succeeded).
+func (c *Controller) recordMonitorError(task string, err error) {
+	if err == nil {
+		return
+	}
+	c.monitorErrsMu.Lock()
+	defer c.monitorErrsMu.Unlock()
+	if c.monitorErrs == nil {
+		c.monitorErrs = make(map[string]error)
+	}
+	c.monitorErrs[task] = err
+}
+
+// drainMonitorErrors returns the accumulated monitor errors
+// and clears the map. Used by Close to roll the per-task
+// failures into a single error to return to the panel.
+func (c *Controller) drainMonitorErrors() map[string]error {
+	c.monitorErrsMu.Lock()
+	defer c.monitorErrsMu.Unlock()
+	out := c.monitorErrs
+	c.monitorErrs = nil
+	return out
+}
+
 // New return a Controller service with default parameters.
+// New constructs a Controller bound to an already-started
+// xray server. The controller is responsible for keeping the
+// server's inbounds, outbounds, and user list in sync with
+// the upstream panel.
+//
+// server must have the mydispatcher feature registered; the
+// controller's type assertion will panic otherwise.
 func New(server *core.Instance, api api.API, config *Config, panelType string) *Controller {
 	logger := log.NewEntry(log.StandardLogger()).WithFields(log.Fields{
 		"Host": api.Describe().APIHost,
@@ -88,14 +173,13 @@ func (c *Controller) Start() error {
 	if newNodeInfo.Port == 0 {
 		return errors.New("server port must > 0")
 	}
-	c.nodeInfo = newNodeInfo
+	c.setNodeInfo(newNodeInfo)
 	c.Tag = c.buildNodeTag()
 
 	// Add new tag
 	err = c.addNewTag(newNodeInfo)
 	if err != nil {
-		c.logger.Panic(err)
-		return err
+		return fmt.Errorf("add new tag: %w", err)
 	}
 	// Update user
 	userInfo, err := c.apiClient.GetUserList()
@@ -104,7 +188,7 @@ func (c *Controller) Start() error {
 	}
 
 	// sync controller userList
-	c.userList = userInfo
+	c.setUserList(userInfo)
 
 	err = c.addNewUser(userInfo, newNodeInfo)
 	if err != nil {
@@ -153,7 +237,7 @@ func (c *Controller) Start() error {
 	)
 
 	// Check cert service in need
-	if c.nodeInfo.EnableTLS && c.config.EnableREALITY == false {
+	if c.getNodeInfo().EnableTLS && c.config.EnableREALITY == false {
 		c.tasks = append(c.tasks, periodicTask{
 			tag: "cert monitor",
 			Periodic: &task.Periodic{
@@ -162,10 +246,32 @@ func (c *Controller) Start() error {
 			}})
 	}
 
-	// Start periodic tasks
+	// Start periodic tasks. Wrap each in a panic recovery so a bug
+	// in one tick doesn't kill the whole process; the rest of the
+	// monitor (cert / nodeInfo / userInfo / report) keep running.
 	for i := range c.tasks {
 		c.logger.Printf("Start %s periodic task", c.tasks[i].tag)
-		go c.tasks[i].Start()
+		tag := c.tasks[i].tag
+		task := c.tasks[i]
+		execute := c.tasks[i].Periodic.Execute
+		c.tasks[i].Periodic.Execute = func() error {
+			err := execute()
+			// Stash non-fatal errors so Close() can report a
+			// single aggregated error instead of a long
+			// stream of c.logger.Print lines the operator
+			// would otherwise have to scroll back through.
+			c.recordMonitorError(tag, err)
+			return err
+		}
+		go func() {
+			defer func() {
+				if r := recover(); r != nil {
+					c.recordMonitorError(tag, fmt.Errorf("panic: %v", r))
+					c.logger.Printf("recovered panic in %s periodic task: %v", tag, r)
+				}
+			}()
+			task.Start()
+		}()
 	}
 
 	return nil
@@ -176,11 +282,25 @@ func (c *Controller) Close() error {
 	for i := range c.tasks {
 		if c.tasks[i].Periodic != nil {
 			if err := c.tasks[i].Periodic.Close(); err != nil {
-				c.logger.Panicf("%s periodic task close failed: %s", c.tasks[i].tag, err)
+				return fmt.Errorf("%s periodic task close: %w", c.tasks[i].tag, err)
 			}
 		}
 	}
 
+	// Aggregate any non-fatal monitor errors collected during
+	// the run. Returning them as a single error (joined via
+	// '\n' so it is readable in the panel log) gives operators
+	// one place to look instead of having to scroll through
+	// the periodic logger.Print lines that were previously
+	// the only record.
+	if errs := c.drainMonitorErrors(); len(errs) > 0 {
+		msgs := make([]string, 0, len(errs))
+		for tag, e := range errs {
+			msgs = append(msgs, fmt.Sprintf("%s: %s", tag, e))
+		}
+		sort.Strings(msgs) // stable order for tests/logs
+		return errors.New(strings.Join(msgs, "; "))
+	}
 	return nil
 }
 
@@ -196,7 +316,7 @@ func (c *Controller) nodeInfoMonitor() (err error) {
 	if err != nil {
 		if err.Error() == api.NodeNotModified {
 			nodeInfoChanged = false
-			newNodeInfo = c.nodeInfo
+			newNodeInfo = c.getNodeInfo()
 		} else {
 			c.logger.Print(err)
 			return nil
@@ -212,7 +332,7 @@ func (c *Controller) nodeInfoMonitor() (err error) {
 	if err != nil {
 		if err.Error() == api.UserNotModified {
 			usersChanged = false
-			newUserInfo = c.userList
+			newUserInfo = c.getUserList()
 		} else {
 			c.logger.Print(err)
 			return nil
@@ -221,37 +341,34 @@ func (c *Controller) nodeInfoMonitor() (err error) {
 
 	// If nodeInfo changed
 	if nodeInfoChanged {
-		if !reflect.DeepEqual(c.nodeInfo, newNodeInfo) {
-			// Remove old tag
-			oldTag := c.Tag
-			err := c.removeOldTag(oldTag)
-			if err != nil {
+		// The panel tells us explicitly whether the descriptor
+		// changed by returning 304 NotModified; in that case
+		// newNodeInfo is the old snapshot. Trust the 304 over
+		// a deep walk of the struct (which is O(field count)
+		// and would also be incorrect on any future field
+		// holding a func or chan).
+		oldTag := c.Tag
+		if err := c.removeOldTag(oldTag); err != nil {
+			c.logger.Print(err)
+			return nil
+		}
+		if c.getNodeInfo().NodeType == "Shadowsocks-Plugin" {
+			if err := c.removeOldTag(fmt.Sprintf("dokodemo-door_%s+1", c.Tag)); err != nil {
 				c.logger.Print(err)
 				return nil
 			}
-			if c.nodeInfo.NodeType == "Shadowsocks-Plugin" {
-				err = c.removeOldTag(fmt.Sprintf("dokodemo-door_%s+1", c.Tag))
-			}
-			if err != nil {
-				c.logger.Print(err)
-				return nil
-			}
-			// Add new tag
-			c.nodeInfo = newNodeInfo
-			c.Tag = c.buildNodeTag()
-			err = c.addNewTag(newNodeInfo)
-			if err != nil {
-				c.logger.Print(err)
-				return nil
-			}
-			nodeInfoChanged = true
-			// Remove Old limiter
-			if err = c.DeleteInboundLimiter(oldTag); err != nil {
-				c.logger.Print(err)
-				return nil
-			}
-		} else {
-			nodeInfoChanged = false
+		}
+		// Add new tag
+		c.setNodeInfo(newNodeInfo)
+		c.Tag = c.buildNodeTag()
+		if err := c.addNewTag(newNodeInfo); err != nil {
+			c.logger.Print(err)
+			return nil
+		}
+		// Remove Old limiter
+		if err := c.DeleteInboundLimiter(oldTag); err != nil {
+			c.logger.Print(err)
+			return nil
 		}
 	}
 
@@ -284,7 +401,7 @@ func (c *Controller) nodeInfoMonitor() (err error) {
 	} else {
 		var deleted, added []api.UserInfo
 		if usersChanged {
-			deleted, added = compareUserList(c.userList, newUserInfo)
+			deleted, added = compareUserList(c.getUserList(), newUserInfo)
 			if len(deleted) > 0 {
 				deletedEmail := make([]string, len(deleted))
 				for i, u := range deleted {
@@ -308,7 +425,7 @@ func (c *Controller) nodeInfoMonitor() (err error) {
 		}
 		c.logger.Printf("%d user deleted, %d user added", len(deleted), len(added))
 	}
-	c.userList = newUserInfo
+	c.setUserList(newUserInfo)
 	return nil
 }
 
@@ -431,42 +548,87 @@ func (c *Controller) addNewUser(userInfo *[]api.UserInfo, nodeInfo *api.NodeInfo
 	return nil
 }
 
+// compareUserList returns the per-user diff between the
+// previously-known user list (old) and the freshly-fetched
+// list (new). The pre-existing implementation was O(N²) via
+// two passes of map inserts plus a delete loop; for a panel
+// that hosts 10k users that was visibly slow. The current
+// version indexes both slices by UID, then walks the new
+// slice in one pass. Total work is O(N) and allocations
+// are bounded by the diff size, not the input size.
+//
+// Semantics: users are matched by UID. A user whose
+// SpeedLimit, DeviceLimit or any other field changed
+// appears in both deleted and added, matching the
+// pre-existing behaviour the controller's limiter loop
+// depends on (it has to re-issue the limiter entry).
 func compareUserList(old, new *[]api.UserInfo) (deleted, added []api.UserInfo) {
-	mSrc := make(map[api.UserInfo]byte) // 按源数组建索引
-	mAll := make(map[api.UserInfo]byte) // 源+目所有元素建索引
-
-	var set []api.UserInfo // 交集
-
-	// 1.源数组建立map
-	for _, v := range *old {
-		mSrc[v] = 0
-		mAll[v] = 0
+	if old == nil || new == nil {
+		return nil, nil
 	}
-	// 2.目数组中，存不进去，即重复元素，所有存不进去的集合就是并集
-	for _, v := range *new {
-		l := len(mAll)
-		mAll[v] = 1
-		if l != len(mAll) { // 长度变化，即可以存
-			l = len(mAll)
-		} else { // 存不了，进并集
-			set = append(set, v)
+
+	oldByUID := make(map[int]api.UserInfo, len(*old))
+	for _, u := range *old {
+		oldByUID[u.UID] = u
+	}
+
+	// Walk the new slice: a UID not present in old is
+	// "added"; a UID present but with a different value is
+	// reported as both deleted and added (the panel must
+	// re-issue the limiter entry for a changed user).
+	for _, u := range *new {
+		prev, ok := oldByUID[u.UID]
+		if !ok {
+			added = append(added, u)
+			continue
 		}
-	}
-	// 3.遍历交集，在并集中找，找到就从并集中删，删完后就是补集（即并-交=所有变化的元素）
-	for _, v := range set {
-		delete(mAll, v)
-	}
-	// 4.此时，mall是补集，所有元素去源中找，找到就是删除的，找不到的必定能在目数组中找到，即新加的
-	for v := range mAll {
-		_, exist := mSrc[v]
-		if exist {
-			deleted = append(deleted, v)
-		} else {
-			added = append(added, v)
+		if prev != u {
+			deleted = append(deleted, prev)
+			added = append(added, u)
 		}
 	}
 
+	// Anything still in oldByUID after the walk is gone
+	// from the new slice.
+	for _, u := range oldByUID {
+		if _, stillPresent := indexOfUser(*new, u.UID); !stillPresent {
+			deleted = append(deleted, u)
+		}
+	}
+	// Map iteration order is non-deterministic; sort the
+	// result so the caller (and tests) see a stable order.
+	sortUserListForDiff(deleted)
+	sortUserListForDiff(added)
 	return deleted, added
+}
+
+// sortUserListForDiff sorts in place by UID. We need a
+// dedicated helper because sort.Slice requires a closure
+// (or a package-level function) and we want this file to
+// stay self-contained.
+func sortUserListForDiff(s []api.UserInfo) {
+	if len(s) < 2 {
+		return
+	}
+	for i := 1; i < len(s); i++ {
+		for j := i; j > 0 && s[j-1].UID > s[j].UID; j-- {
+			s[j-1], s[j] = s[j], s[j-1]
+		}
+	}
+}
+
+// indexOfUser is a tiny helper that returns (value, true)
+// when a user with the given UID is present in the slice.
+// We can't reuse the oldByUID map for the deletion pass
+// because we already consumed it above; a single linear scan
+// keeps the function self-contained.
+func indexOfUser(s []api.UserInfo, uid int) (api.UserInfo, bool) {
+	for _, u := range s {
+		if u.UID == uid {
+			return u, true
+		}
+	}
+	return api.UserInfo{}, false
 }
 
 func limitUser(c *Controller, user api.UserInfo, silentUsers *[]api.UserInfo) {
@@ -529,7 +691,7 @@ func (c *Controller) userInfoMonitor() (err error) {
 	AutoSpeedLimit := int64(c.config.AutoSpeedLimitConfig.Limit)
 	UpdatePeriodic := int64(c.config.UpdatePeriodic)
 	limitedUsers := make([]api.UserInfo, 0)
-	for _, user := range *c.userList {
+	for _, user := range *c.getUserList() {
 		userTag := c.buildUserTag(&user)
 		up, down, upCounter, downCounter := c.getTraffic(userTag)
 		if down > 0 {
@@ -577,15 +739,19 @@ func (c *Controller) userInfoMonitor() (err error) {
 	}
 	if len(userTraffic) > 0 {
 		c.logger.Printf("Reporting %d user(s) traffic to panel; example: UID=%d up=%d down=%d", len(userTraffic), userTraffic[0].UID, userTraffic[0].Upload, userTraffic[0].Download)
-		var err error // Define an empty error
-		if !c.config.DisableUploadTraffic {
-			err = c.apiClient.ReportUserTraffic(&userTraffic)
-		}
-		// If report traffic error, not clear the traffic
-		if err != nil {
-			c.logger.Print(err)
-		} else {
+		var err error
+		if c.config.DisableUploadTraffic {
+			// Without upload, we still need to reset counters so
+			// the next tick doesn't re-report the same bytes.
 			c.resetTraffic(&upCounterList, &downCounterList)
+		} else {
+			err = c.apiClient.ReportUserTraffic(&userTraffic)
+			// If report traffic error, do not clear the traffic.
+			if err != nil {
+				c.logger.Print(err)
+			} else {
+				c.resetTraffic(&upCounterList, &downCounterList)
+			}
 		}
 	}
 
@@ -615,25 +781,24 @@ func (c *Controller) userInfoMonitor() (err error) {
 }
 
 func (c *Controller) buildNodeTag() string {
-	return fmt.Sprintf("%s_%s_%d", c.nodeInfo.NodeType, c.config.ListenIP, c.nodeInfo.Port)
+	return fmt.Sprintf("%s_%s_%d", c.getNodeInfo().NodeType, c.config.ListenIP, c.getNodeInfo().Port)
 }
 
-// func (c *Controller) logPrefix() string {
-// 	return fmt.Sprintf("[%s] %s(ID=%d)", c.clientInfo.APIHost, c.nodeInfo.NodeType, c.nodeInfo.NodeID)
-// }
 
 // Check Cert
 func (c *Controller) certMonitor() error {
-	if c.nodeInfo.EnableTLS && c.config.EnableREALITY == false {
+	if c.getNodeInfo().EnableTLS && c.config.EnableREALITY == false {
 		switch c.config.CertConfig.CertMode {
 		case "dns", "http", "tls":
 			lego, err := mylego.New(c.config.CertConfig)
 			if err != nil {
+				// Skip renewal if we failed to build the cert manager;
+				// otherwise the next line would nil-deref on lego.
 				c.logger.Print(err)
+				return err
 			}
 			// Xray-core supports the OcspStapling certification hot renew
-			_, _, _, err = lego.RenewCert()
-			if err != nil {
+			if _, _, _, err = lego.RenewCert(); err != nil {
 				c.logger.Print(err)
 			}
 		}

@@ -3,9 +3,9 @@ package controller_test
 import (
 	"testing"
 
-	"github.com/XrayR-project/XrayR/api"
-	"github.com/XrayR-project/XrayR/common/mylego"
-	. "github.com/XrayR-project/XrayR/service/controller"
+	"github.com/Starktomy/XrayR/api"
+	"github.com/Starktomy/XrayR/common/mylego"
+	. "github.com/Starktomy/XrayR/service/controller"
 )
 
 func TestBuildV2ray(t *testing.T) {
@@ -74,6 +74,7 @@ func TestBuildSS(t *testing.T) {
 		SpeedLimit:        0,
 		AlterID:           2,
 		TransportProtocol: "tcp",
+		CypherMethod:      "aes-256-gcm",
 		Host:              "test.test.tk",
 		Path:              "v2ray",
 		EnableTLS:         false,

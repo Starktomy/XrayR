@@ -3,8 +3,8 @@ package gov2panel_test
 import (
 	"testing"
 
-	"github.com/XrayR-project/XrayR/api"
-	"github.com/XrayR-project/XrayR/api/gov2panel"
+	"github.com/Starktomy/XrayR/api"
+	"github.com/Starktomy/XrayR/api/gov2panel"
 	"github.com/gogf/gf/v2/encoding/gjson"
 	"github.com/gogf/gf/v2/util/gconv"
 )
@@ -72,7 +72,7 @@ func TestReportReportUserTraffic(t *testing.T) {
 func TestGetNodeRule(t *testing.T) {
 
 	client := CreateClient()
-	client.Debug()
+	/* client.Debug() — removed in f5b822a; interface no longer requires it */ _ = struct{}{}
 
 	ruleList, err := client.GetNodeRule()
 	if err != nil {

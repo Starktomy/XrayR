@@ -1,10 +1,9 @@
 package mylego
 
 import (
+	"fmt"
 	"os"
 	"time"
-
-	log "github.com/sirupsen/logrus"
 
 	"github.com/go-acme/lego/v4/certcrypto"
 	"github.com/go-acme/lego/v4/challenge/dns01"
@@ -18,23 +17,40 @@ import (
 
 const filePerm os.FileMode = 0o600
 
-func setup(accountsStorage *AccountsStorage) (*Account, *lego.Client) {
+// setup loads (or creates) the ACME account and returns a
+// configured lego client. It returns an error rather than
+// panicking so the cert monitor in controller can surface the
+// failure instead of crashing XrayR.
+func setup(accountsStorage *AccountsStorage) (*Account, *lego.Client, error) {
 	keyType := certcrypto.EC256
-	privateKey := accountsStorage.GetPrivateKey(keyType)
+	privateKey, err := accountsStorage.GetPrivateKey(keyType)
+	if err != nil {
+		return nil, nil, err
+	}
 
 	var account *Account
-	if accountsStorage.ExistsAccountFilePath() {
-		account = accountsStorage.LoadAccount(privateKey)
+	exists, err := accountsStorage.ExistsAccountFilePath()
+	if err != nil {
+		return nil, nil, err
+	}
+	if exists {
+		account, err = accountsStorage.LoadAccount(privateKey)
+		if err != nil {
+			return nil, nil, err
+		}
 	} else {
 		account = &Account{Email: accountsStorage.GetUserID(), key: privateKey}
 	}
 
-	client := newClient(account, keyType)
+	client, err := newClient(account, keyType)
+	if err != nil {
+		return nil, nil, err
+	}
 
-	return account, client
+	return account, client, nil
 }
 
-func newClient(acc registration.User, keyType certcrypto.KeyType) *lego.Client {
+func newClient(acc registration.User, keyType certcrypto.KeyType) (*lego.Client, error) {
 	config := lego.NewConfig(acc)
 	config.CADirURL = acme.LetsEncryptURL
 
@@ -46,10 +62,10 @@ func newClient(acc registration.User, keyType certcrypto.KeyType) *lego.Client {
 
 	client, err := lego.NewClient(config)
 	if err != nil {
-		log.Panicf("Could not create client: %v", err)
+		return nil, fmt.Errorf("create lego client: %w", err)
 	}
 
-	return client
+	return client, nil
 }
 
 func createNonExistingFolder(path string) error {
@@ -61,36 +77,35 @@ func createNonExistingFolder(path string) error {
 	return nil
 }
 
-func setupChallenges(l *LegoCMD, client *lego.Client) {
+func setupChallenges(l *LegoCMD, client *lego.Client) error {
 	switch l.C.CertMode {
 	case "http":
-		err := client.Challenge.SetHTTP01Provider(http01.NewProviderServer("", ""))
-		if err != nil {
-			log.Panic(err)
+		if err := client.Challenge.SetHTTP01Provider(http01.NewProviderServer("", "")); err != nil {
+			return fmt.Errorf("set HTTP-01 challenge provider: %w", err)
 		}
 	case "tls":
-		err := client.Challenge.SetTLSALPN01Provider(tlsalpn01.NewProviderServer("", ""))
-		if err != nil {
-			log.Panic(err)
+		if err := client.Challenge.SetTLSALPN01Provider(tlsalpn01.NewProviderServer("", "")); err != nil {
+			return fmt.Errorf("set TLS-ALPN-01 challenge provider: %w", err)
 		}
 	case "dns":
-		setupDNS(l.C.Provider, client)
+		return setupDNS(l.C.Provider, client)
 	default:
-		log.Panic("No challenge selected. You must specify at least one challenge: `http`, `tls`, `dns`.")
+		return fmt.Errorf("no challenge selected. Specify at least one: http, tls, dns")
 	}
+	return nil
 }
 
-func setupDNS(p string, client *lego.Client) {
+func setupDNS(p string, client *lego.Client) error {
 	provider, err := dns.NewDNSChallengeProviderByName(p)
 	if err != nil {
-		log.Panic(err)
+		return fmt.Errorf("create DNS provider %q: %w", p, err)
 	}
 
-	err = client.Challenge.SetDNS01Provider(
+	if err := client.Challenge.SetDNS01Provider(
 		provider,
 		dns01.CondOption(true, dns01.AddDNSTimeout(10*time.Second)),
-	)
-	if err != nil {
-		log.Panic(err)
+	); err != nil {
+		return fmt.Errorf("set DNS-01 challenge provider: %w", err)
 	}
+	return nil
 }

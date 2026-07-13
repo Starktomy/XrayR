@@ -110,11 +110,19 @@ func Test_needRenewal(t *testing.T) {
 	for _, test := range testCases {
 		test := test
 		t.Run(test.desc, func(t *testing.T) {
-			actual := needRenewal(test.x509Cert, "foo.com", test.days)
-
+			actual, err := needRenewal(test.x509Cert, "foo.com", test.days)
+			assert.NoError(t, err)
 			assert.Equal(t, test.expected, actual)
 		})
 	}
+}
+
+// Test_needRenewalCARejects verifies the CA-cert guard at
+// the top of needRenewal: a CA-rooted bundle should return
+// an error rather than silently proceed to renewal.
+func Test_needRenewalCARejects(t *testing.T) {
+	_, err := needRenewal(&x509.Certificate{IsCA: true}, "foo.com", 30)
+	assert.Error(t, err, "needRenewal must reject CA-rooted bundles")
 }
 
 func merge(prevDomains, nextDomains []string) []string {
