@@ -132,7 +132,7 @@ func (c *Controller) removeUsers(users []string, tag string) error {
 	return nil
 }
 
-func (c *Controller) getTraffic(email string) (up int64, down int64, upCounter stats.Counter, downCounter stats.Counter) {
+func (c *Controller) GetTraffic(email string) (up int64, down int64, upCounter stats.Counter, downCounter stats.Counter) {
 	upName := "user>>>" + email + ">>>traffic>>>uplink"
 	downName := "user>>>" + email + ">>>traffic>>>downlink"
 	upCounter = c.stm.GetCounter(upName)
@@ -150,7 +150,7 @@ func (c *Controller) getTraffic(email string) (up int64, down int64, upCounter s
 	return up, down, upCounter, downCounter
 }
 
-func (c *Controller) resetTraffic(upCounterList *[]stats.Counter, downCounterList *[]stats.Counter) {
+func (c *Controller) ResetTraffic(upCounterList *[]stats.Counter, downCounterList *[]stats.Counter) {
 	for _, upCounter := range *upCounterList {
 		upCounter.Set(0)
 	}

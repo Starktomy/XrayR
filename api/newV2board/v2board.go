@@ -235,9 +235,12 @@ func (c *APIClient) ReportUserTraffic(userTraffic *[]api.UserTraffic) error {
 
 // GetNodeRule implements the API interface
 func (c *APIClient) GetNodeRule() (*[]api.DetectRule, error) {
-	routes := c.resp.Load().(*serverConfig).Routes
-
 	ruleList := c.LocalRuleList
+	val := c.resp.Load()
+	if val == nil {
+		return &ruleList, nil
+	}
+	routes := val.(*serverConfig).Routes
 
 	for i := range routes {
 		if routes[i].Action == "block" {

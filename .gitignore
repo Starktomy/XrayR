@@ -18,3 +18,7 @@ error.log
 .lego
 cert
 config.yml
+# AI agent collaboration files
+.agents/
+PROJECT.md
+test-release-docs.py

@@ -2,7 +2,7 @@ package panel
 
 import (
 	"github.com/Starktomy/XrayR/api"
-	"github.com/Starktomy/XrayR/service/controller"
+	"github.com/Starktomy/XrayR/config"
 )
 
 type Config struct {
@@ -16,9 +16,9 @@ type Config struct {
 }
 
 type NodesConfig struct {
-	PanelType        string             `mapstructure:"PanelType"`
-	ApiConfig        *api.Config        `mapstructure:"ApiConfig"`
-	ControllerConfig *controller.Config `mapstructure:"ControllerConfig"`
+	PanelType        string         `mapstructure:"PanelType"`
+	ApiConfig        *api.Config    `mapstructure:"ApiConfig"`
+	ControllerConfig *config.Config `mapstructure:"ControllerConfig"`
 }
 
 type LogConfig struct {

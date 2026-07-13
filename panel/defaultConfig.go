@@ -1,6 +1,6 @@
 package panel
 
-import "github.com/Starktomy/XrayR/service/controller"
+import "github.com/Starktomy/XrayR/config"
 
 func getDefaultLogConfig() *LogConfig {
 	return &LogConfig{
@@ -20,8 +20,8 @@ func getDefaultConnectionConfig() *ConnectionConfig {
 	}
 }
 
-func getDefaultControllerConfig() *controller.Config {
-	return &controller.Config{
+func getDefaultControllerConfig() *config.Config {
+	return &config.Config{
 		ListenIP:       "0.0.0.0",
 		SendIP:         "0.0.0.0",
 		UpdatePeriodic: 60,
