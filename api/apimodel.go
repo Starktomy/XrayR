@@ -118,7 +118,6 @@ type UserTraffic struct {
 type ClientInfo struct {
 	APIHost  string
 	NodeID   int
-	Key      string
 	NodeType string
 }
 

@@ -1,0 +1,36 @@
+1839556 ci(actions): upgrade actions still pinned to Node 20
+8e0de57 fix(build): drop third_party/gvisor and pin CI to go 1.25.6
+c95f1cd fix(build): drop gvisor runtime_go126_unsafe to fix addrOfSpinning
+0715513 fix(build): patch gvisor and bump CI Go version to 1.25
+63c689e chore: drop unmaintained bunpanel and pmpanel adapters
+e2d6e8d refactor(controller): rewrite compareUserList as O(N) map diff
+451fdb4 refactor: switch error wrapping to %w for errors.Is/As support
+1261f07 fix(v2raysocks): guard GetNodeRule against nil ConfigResp
+8c14bef test(mylego): rewrite tests for offline execution
+e517f83 fix(controller): aggregate monitor errors and surface on Close
+8bce3e2 fix(controller): trust 304 NotModified over reflect.DeepEqual
+3f984d6 fix(controller): protect nodeInfo and userList with RWMutex
+d8d12f0 fix(bunpanel): propagate json.Unmarshal errors in ParseNodeInfo
+12da252 fix(mylego): replace log.Panic with error returns
+2d578af test(controller): set CypherMethod in TestBuildSS
+9e7ec0e test(common): add unit tests for limiter, rule, splice, serverstatus
+23c8bb4 refactor(api): drop Debug() from API interface
+385932f docs: add godoc to exported functions
+fd01a7c refactor(api): share assembleURL and CheckResponse across panels
+202acd8 fix(controller): replace log.Panic with error returns
+40d6286 test(controller): rewrite TestController to exercise feature init
+ef6b5a2 refactor(rule): rename Manager receiver to m
+118a1aa refactor(mylego): instance-scoped path
+c6a2086 chore: small panel/cmd cleanups
+3401e06 chore: drop dead code and fix non-constant format string
+69ede5e refactor(api): add typed sentinels for NotModified responses
+7e45417 fix(panels): stop crashing the process on bad rule list file
+c74dc09 refactor: clean up counter pre-registration and surface errors
+af0a246 fix(panels): protect eTags map with sync.Mutex
+e44a424 fix(controller): recover panics in periodic task goroutines
+1ca380a fix(limiter): sync.WaitGroup around pushIP goroutines
+0b03c3f fix(controller): reset traffic counters when upload is disabled
+1def5e0 refactor(panel,cmd): return errors instead of log.Panicf
+1193a7c refactor(dispatcher): replace panic with error return
+af9e7d8 fix(controller): guard certMonitor against nil lego receiver
+f5b822a chore: rename module path to github.com/Starktomy/XrayR

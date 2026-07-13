@@ -586,14 +586,13 @@ func compareUserList(old, new *[]api.UserInfo) (deleted, added []api.UserInfo) {
 			deleted = append(deleted, prev)
 			added = append(added, u)
 		}
+		delete(oldByUID, u.UID)
 	}
 
 	// Anything still in oldByUID after the walk is gone
 	// from the new slice.
 	for _, u := range oldByUID {
-		if _, stillPresent := indexOfUser(*new, u.UID); !stillPresent {
-			deleted = append(deleted, u)
-		}
+		deleted = append(deleted, u)
 	}
 	// Map iteration order is non-deterministic; sort the
 	// result so the caller (and tests) see a stable order.
@@ -617,19 +616,6 @@ func sortUserListForDiff(s []api.UserInfo) {
 	}
 }
 
-// indexOfUser is a tiny helper that returns (value, true)
-// when a user with the given UID is present in the slice.
-// We can't reuse the oldByUID map for the deletion pass
-// because we already consumed it above; a single linear scan
-// keeps the function self-contained.
-func indexOfUser(s []api.UserInfo, uid int) (api.UserInfo, bool) {
-	for _, u := range s {
-		if u.UID == uid {
-			return u, true
-		}
-	}
-	return api.UserInfo{}, false
-}
 
 func limitUser(c *Controller, user api.UserInfo, silentUsers *[]api.UserInfo) {
 	c.limitedUsers[user] = LimitInfo{
@@ -685,13 +671,15 @@ func (c *Controller) userInfoMonitor() (err error) {
 	}
 
 	// Get User traffic
-	var userTraffic []api.UserTraffic
-	var upCounterList []stats.Counter
-	var downCounterList []stats.Counter
+	userList := *c.getUserList()
+	userCount := len(userList)
+	userTraffic := make([]api.UserTraffic, 0, userCount)
+	upCounterList := make([]stats.Counter, 0, userCount)
+	downCounterList := make([]stats.Counter, 0, userCount)
 	AutoSpeedLimit := int64(c.config.AutoSpeedLimitConfig.Limit)
 	UpdatePeriodic := int64(c.config.UpdatePeriodic)
 	limitedUsers := make([]api.UserInfo, 0)
-	for _, user := range *c.getUserList() {
+	for _, user := range userList {
 		userTag := c.buildUserTag(&user)
 		up, down, upCounter, downCounter := c.getTraffic(userTag)
 		if down > 0 {

@@ -234,7 +234,7 @@ func (c *APIClient) ReportUserTraffic(userTraffic *[]api.UserTraffic) (err error
 }
 
 func (c *APIClient) Describe() api.ClientInfo {
-	return api.ClientInfo{APIHost: c.APIHost, NodeID: c.NodeID, Key: c.Key, NodeType: c.NodeType}
+	return api.ClientInfo{APIHost: c.APIHost, NodeID: c.NodeID, NodeType: c.NodeType}
 }
 
 // GetNodeRule implements the API interface
