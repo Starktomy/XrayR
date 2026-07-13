@@ -5,8 +5,10 @@ package api
 import (
 	"bufio"
 	"fmt"
+	"net/http"
 	"os"
 	"regexp"
+	"time"
 
 	"github.com/go-resty/resty/v2"
 )
@@ -87,4 +89,27 @@ func ReadLocalRuleList(path string) (LocalRuleList []DetectRule) {
 		}
 	}
 	return LocalRuleList
+}
+
+// CreateRestyClient creates a resty client with common configurations
+// including connection pool and keep-alive settings.
+func CreateRestyClient(apiConfig *Config) *resty.Client {
+	client := resty.New()
+	client.SetRetryCount(3)
+	if apiConfig.Timeout > 0 {
+		client.SetTimeout(time.Duration(apiConfig.Timeout) * time.Second)
+	} else {
+		client.SetTimeout(5 * time.Second)
+	}
+
+	// Configure connection pool and keep-alive
+	if transport, ok := client.GetClient().Transport.(*http.Transport); ok {
+		transport.MaxIdleConns = 100
+		transport.MaxIdleConnsPerHost = 20
+		transport.MaxConnsPerHost = 100
+		transport.IdleConnTimeout = 90 * time.Second
+	}
+
+	client.SetBaseURL(apiConfig.APIHost)
+	return client
 }

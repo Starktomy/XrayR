@@ -8,7 +8,6 @@ import (
 	"strconv"
 	"strings"
 	"sync/atomic"
-	"time"
 
 	log "github.com/sirupsen/logrus"
 
@@ -38,13 +37,7 @@ type APIClient struct {
 
 // New create an api instance
 func New(apiConfig *api.Config) *APIClient {
-	client := resty.New()
-	client.SetRetryCount(3)
-	if apiConfig.Timeout > 0 {
-		client.SetTimeout(time.Duration(apiConfig.Timeout) * time.Second)
-	} else {
-		client.SetTimeout(5 * time.Second)
-	}
+	client := api.CreateRestyClient(apiConfig)
 	client.OnError(func(req *resty.Request, err error) {
 		if v, ok := err.(*resty.ResponseError); ok {
 			// v.Response contains the last response from the server
@@ -52,7 +45,6 @@ func New(apiConfig *api.Config) *APIClient {
 			log.Print(v.Err)
 		}
 	})
-	client.SetBaseURL(apiConfig.APIHost)
 
 	var nodeType string
 
