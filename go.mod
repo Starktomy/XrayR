@@ -23,11 +23,12 @@ require (
 	github.com/shirou/gopsutil/v3 v3.24.5
 	github.com/sirupsen/logrus v1.9.3
 	github.com/spf13/cobra v1.10.2
-	github.com/spf13/viper v1.18.2
+	github.com/spf13/viper v1.21.0
 	github.com/stretchr/testify v1.11.1
 	github.com/xtls/xray-core v1.260123.0
 	golang.org/x/crypto v0.50.0
 	golang.org/x/net v0.53.0
+	golang.org/x/sync v0.22.0
 	golang.org/x/time v0.15.0
 	google.golang.org/protobuf v1.36.11
 )
@@ -141,7 +142,6 @@ require (
 	github.com/hashicorp/go-multierror v1.1.1 // indirect
 	github.com/hashicorp/go-retryablehttp v0.7.8 // indirect
 	github.com/hashicorp/go-uuid v1.0.3 // indirect
-	github.com/hashicorp/hcl v1.0.0 // indirect
 	github.com/huaweicloud/huaweicloud-sdk-go-v3 v0.1.192 // indirect
 	github.com/iij/doapi v0.0.0-20190504054126-0bbf12d6d7df // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
@@ -198,7 +198,7 @@ require (
 	github.com/openshift/gssapi v0.0.0-20161010215902-5fb4217df13b // indirect
 	github.com/ovh/go-ovh v1.9.0 // indirect
 	github.com/pelletier/go-toml v1.9.5 // indirect
-	github.com/pelletier/go-toml/v2 v2.1.1 // indirect
+	github.com/pelletier/go-toml/v2 v2.2.4 // indirect
 	github.com/peterhellberg/link v1.2.0 // indirect
 	github.com/pires/go-proxyproto v0.9.0 // indirect
 	github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c // indirect
@@ -219,8 +219,7 @@ require (
 	github.com/sacloud/go-http v0.1.9 // indirect
 	github.com/sacloud/iaas-api-go v1.23.1 // indirect
 	github.com/sacloud/packages-go v0.0.12 // indirect
-	github.com/sagikazarmark/locafero v0.4.0 // indirect
-	github.com/sagikazarmark/slog-shim v0.1.0 // indirect
+	github.com/sagikazarmark/locafero v0.11.0 // indirect
 	github.com/scaleway/scaleway-sdk-go v1.0.0-beta.36 // indirect
 	github.com/seiflotfy/cuckoofilter v0.0.0-20240715131351-a2f2c23f1771 // indirect
 	github.com/selectel/domains-go v1.1.0 // indirect
@@ -230,10 +229,10 @@ require (
 	github.com/softlayer/softlayer-go v1.2.1 // indirect
 	github.com/softlayer/xmlrpc v0.0.0-20200409220501-5f089df7cb7e // indirect
 	github.com/sony/gobreaker v1.0.0 // indirect
-	github.com/sourcegraph/conc v0.3.0 // indirect
-	github.com/spf13/afero v1.11.0 // indirect
-	github.com/spf13/cast v1.7.0 // indirect
-	github.com/spf13/pflag v1.0.9 // indirect
+	github.com/sourcegraph/conc v0.3.1-0.20240121214520-5f936abd7ae8 // indirect
+	github.com/spf13/afero v1.15.0 // indirect
+	github.com/spf13/cast v1.10.0 // indirect
+	github.com/spf13/pflag v1.0.10 // indirect
 	github.com/stretchr/objx v0.5.3 // indirect
 	github.com/subosito/gotenv v1.6.0 // indirect
 	github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common v1.3.83 // indirect
@@ -269,11 +268,11 @@ require (
 	go.uber.org/multierr v1.11.0 // indirect
 	go.uber.org/ratelimit v0.3.1 // indirect
 	go.uber.org/zap v1.27.0 // indirect
+	go.yaml.in/yaml/v3 v3.0.4 // indirect
 	go4.org/netipx v0.0.0-20231129151722-fdeea329fbba // indirect
 	golang.org/x/exp v0.0.0-20260410095643-746e56fc9e2f // indirect
 	golang.org/x/mod v0.35.0 // indirect
 	golang.org/x/oauth2 v0.36.0 // indirect
-	golang.org/x/sync v0.22.0 // indirect
 	golang.org/x/sys v0.43.0 // indirect
 	golang.org/x/text v0.36.0 // indirect
 	golang.org/x/tools v0.44.0 // indirect
