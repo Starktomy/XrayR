@@ -1,5 +1,11 @@
 name: Publish Docker image
 on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to build (e.g. v0.9.9). Leave empty to build the current commit as 'dev'."
+        required: false
+        type: string
   push:
     tags:
       - "v*"
@@ -29,6 +35,13 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          # When manually triggered, build-args provides the
+          # tag; when triggered by a tag push, ref_name is
+          # already the version. Always emit the input/ref
+          # as one of the tags so ad-hoc dispatch builds get
+          # a useful label.
+          tags: |
+            type=raw,value=${{ inputs.tag || github.ref_name }}
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
       - name: Set up Docker Buildx
@@ -46,7 +59,7 @@ jobs:
           context: .
           platforms: ${{ matrix.platform }}
           labels: ${{ steps.meta.outputs.labels }}
-          build-args: VERSION=${{ github.ref_name }}
+          build-args: VERSION=${{ inputs.tag || github.ref_name }}
           outputs: type=image,name=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=true
       - name: Export digest
         run: |
@@ -81,6 +94,13 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          # When manually triggered, build-args provides the
+          # tag; when triggered by a tag push, ref_name is
+          # already the version. Always emit the input/ref
+          # as one of the tags so ad-hoc dispatch builds get
+          # a useful label.
+          tags: |
+            type=raw,value=${{ inputs.tag || github.ref_name }}
       - name: Login to GitHub Container Registry
         uses: docker/login-action@v3
         with:
