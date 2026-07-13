@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"sort"
@@ -10,12 +11,12 @@ import (
 
 	log "github.com/sirupsen/logrus"
 	"github.com/xtls/xray-core/common/protocol"
-	"github.com/xtls/xray-core/common/task"
 	"github.com/xtls/xray-core/core"
 	"github.com/xtls/xray-core/features/inbound"
 	"github.com/xtls/xray-core/features/outbound"
 	"github.com/xtls/xray-core/features/policy"
 	"github.com/xtls/xray-core/features/stats"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/Starktomy/XrayR/api"
 	"github.com/Starktomy/XrayR/app/mydispatcher"
@@ -65,11 +66,16 @@ type Controller struct {
 	// the previous code threw away.
 	monitorErrsMu sync.Mutex
 	monitorErrs   map[string]error
+
+	ctx    context.Context
+	cancel context.CancelFunc
+	eg     *errgroup.Group
 }
 
 type periodicTask struct {
-	tag string
-	*task.Periodic
+	tag      string
+	Interval time.Duration
+	Execute  func() error
 }
 
 // getNodeInfo returns the current nodeInfo under a read lock.
@@ -220,30 +226,30 @@ func (c *Controller) Start() error {
 		c.warnedUsers = make(map[api.UserInfo]int)
 	}
 
+	c.ctx, c.cancel = context.WithCancel(context.Background())
+	c.eg, c.ctx = errgroup.WithContext(c.ctx)
+
 	// Add periodic tasks
 	c.tasks = append(c.tasks,
 		periodicTask{
-			tag: "node monitor",
-			Periodic: &task.Periodic{
-				Interval: time.Duration(c.config.UpdatePeriodic) * time.Second,
-				Execute:  c.nodeInfoMonitor,
-			}},
+			tag:      "node monitor",
+			Interval: time.Duration(c.config.UpdatePeriodic) * time.Second,
+			Execute:  c.nodeInfoMonitor,
+		},
 		periodicTask{
-			tag: "user monitor",
-			Periodic: &task.Periodic{
-				Interval: time.Duration(c.config.UpdatePeriodic) * time.Second,
-				Execute:  c.userInfoMonitor,
-			}},
+			tag:      "user monitor",
+			Interval: time.Duration(c.config.UpdatePeriodic) * time.Second,
+			Execute:  c.userInfoMonitor,
+		},
 	)
 
 	// Check cert service in need
 	if c.getNodeInfo().EnableTLS && c.config.EnableREALITY == false {
 		c.tasks = append(c.tasks, periodicTask{
-			tag: "cert monitor",
-			Periodic: &task.Periodic{
-				Interval: time.Duration(c.config.UpdatePeriodic) * time.Second * 60,
-				Execute:  c.certMonitor,
-			}})
+			tag:      "cert monitor",
+			Interval: time.Duration(c.config.UpdatePeriodic) * time.Second * 60,
+			Execute:  c.certMonitor,
+		})
 	}
 
 	// Start periodic tasks. Wrap each in a panic recovery so a bug
@@ -253,25 +259,36 @@ func (c *Controller) Start() error {
 		c.logger.Printf("Start %s periodic task", c.tasks[i].tag)
 		tag := c.tasks[i].tag
 		task := c.tasks[i]
-		execute := c.tasks[i].Periodic.Execute
-		c.tasks[i].Periodic.Execute = func() error {
-			err := execute()
-			// Stash non-fatal errors so Close() can report a
-			// single aggregated error instead of a long
-			// stream of c.logger.Print lines the operator
-			// would otherwise have to scroll back through.
-			c.recordMonitorError(tag, err)
-			return err
-		}
-		go func() {
+		execute := task.Execute
+
+		c.eg.Go(func() error {
 			defer func() {
 				if r := recover(); r != nil {
 					c.recordMonitorError(tag, fmt.Errorf("panic: %v", r))
 					c.logger.Printf("recovered panic in %s periodic task: %v", tag, r)
 				}
 			}()
-			task.Start()
-		}()
+
+			ticker := time.NewTicker(task.Interval)
+			defer ticker.Stop()
+
+			// Run once immediately
+			err := execute()
+			c.recordMonitorError(tag, err)
+
+			for {
+				select {
+				case <-c.ctx.Done():
+					// Context cancelled, do one last run to flush data
+					err := execute()
+					c.recordMonitorError(tag, err)
+					return nil
+				case <-ticker.C:
+					err := execute()
+					c.recordMonitorError(tag, err)
+				}
+			}
+		})
 	}
 
 	return nil
@@ -279,12 +296,11 @@ func (c *Controller) Start() error {
 
 // Close implement the Close() function of the service interface
 func (c *Controller) Close() error {
-	for i := range c.tasks {
-		if c.tasks[i].Periodic != nil {
-			if err := c.tasks[i].Periodic.Close(); err != nil {
-				return fmt.Errorf("%s periodic task close: %w", c.tasks[i].tag, err)
-			}
-		}
+	if c.cancel != nil {
+		c.cancel()
+	}
+	if c.eg != nil {
+		_ = c.eg.Wait()
 	}
 
 	// Aggregate any non-fatal monitor errors collected during
@@ -616,7 +632,6 @@ func sortUserListForDiff(s []api.UserInfo) {
 	}
 }
 
-
 func limitUser(c *Controller, user api.UserInfo, silentUsers *[]api.UserInfo) {
 	c.limitedUsers[user] = LimitInfo{
 		end:               time.Now().Unix() + int64(c.config.AutoSpeedLimitConfig.LimitDuration*60),
@@ -771,7 +786,6 @@ func (c *Controller) userInfoMonitor() (err error) {
 func (c *Controller) buildNodeTag() string {
 	return fmt.Sprintf("%s_%s_%d", c.getNodeInfo().NodeType, c.config.ListenIP, c.getNodeInfo().Port)
 }
-
 
 // Check Cert
 func (c *Controller) certMonitor() error {

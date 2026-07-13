@@ -115,6 +115,7 @@ type DefaultDispatcher struct {
 	fdns        dns.FakeDNSEngine
 	Limiter     *limiter.Limiter
 	RuleManager *rule.Manager
+	wg          sync.WaitGroup
 }
 
 func init() {
@@ -163,12 +164,13 @@ func (*DefaultDispatcher) Type() interface{} {
 }
 
 // Start implements common.Runnable.
-func (*DefaultDispatcher) Start() error {
+func (d *DefaultDispatcher) Start() error {
 	return nil
 }
 
 // Close implements common.Closable.
-func (*DefaultDispatcher) Close() error {
+func (d *DefaultDispatcher) Close() error {
+	d.wg.Wait()
 	return nil
 }
 
@@ -293,9 +295,15 @@ func (d *DefaultDispatcher) Dispatch(ctx context.Context, destination net.Destin
 		return nil, err
 	}
 	if !sniffingRequest.Enabled {
-		go d.routedDispatch(ctx, outbound, destination)
-	} else {
+		d.wg.Add(1)
 		go func() {
+			defer d.wg.Done()
+			d.routedDispatch(ctx, outbound, destination)
+		}()
+	} else {
+		d.wg.Add(1)
+		go func() {
+			defer d.wg.Done()
 			cReader := &cachedReader{
 				reader: outbound.Reader.(*pipe.Reader),
 			}
@@ -340,9 +348,15 @@ func (d *DefaultDispatcher) DispatchLink(ctx context.Context, destination net.De
 	}
 	sniffingRequest := content.SniffingRequest
 	if !sniffingRequest.Enabled {
-		go d.routedDispatch(ctx, outbound, destination)
-	} else {
+		d.wg.Add(1)
 		go func() {
+			defer d.wg.Done()
+			d.routedDispatch(ctx, outbound, destination)
+		}()
+	} else {
+		d.wg.Add(1)
+		go func() {
+			defer d.wg.Done()
 			cReader := &cachedReader{
 				reader: outbound.Reader.(*pipe.Reader),
 			}
