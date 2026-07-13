@@ -10,6 +10,8 @@ on:
       - "go.mod"
       - "go.sum"
       - ".github/workflows/*.yml"
+    tags:
+      - "v*"
   pull_request:
     types: [ opened, synchronize, reopened ]
     paths:
@@ -133,12 +135,12 @@ jobs:
       - name: Build XrayR
         run: |
           mkdir -p build_assets
-          go build -v -o build_assets/XrayR -trimpath -ldflags "-s -w -buildid="
+          go build -v -o build_assets/XrayR -trimpath -ldflags "-s -w -buildid= -X github.com/Starktomy/XrayR/cmd.version=${{ github.ref_name }}"
 
       - name: Build Mips softfloat XrayR
         if: matrix.goarch == 'mips' || matrix.goarch == 'mipsle'
         run: |
-          GOMIPS=softfloat go build -v -o build_assets/XrayR_softfloat -trimpath -ldflags "-s -w -buildid="
+          GOMIPS=softfloat go build -v -o build_assets/XrayR_softfloat -trimpath -ldflags "-s -w -buildid= -X github.com/Starktomy/XrayR/cmd.version=${{ github.ref_name }}"
       - name: Rename Windows XrayR
         if: matrix.goos == 'windows'
         run: |
