@@ -4,10 +4,10 @@ import (
 	"fmt"
 
 	"github.com/spf13/cobra"
+	"github.com/Starktomy/XrayR/common/version"
 )
 
 var (
-	version  = "0.9.7"
 	codename = "XrayR"
 	intro    = "A Xray backend that supports many panels"
 )
@@ -23,5 +23,5 @@ func init() {
 }
 
 func showVersion() {
-	fmt.Printf("%s %s (%s) \n", codename, version, intro)
+	fmt.Printf("%s %s (%s) \n", codename, version.Version, intro)
 }

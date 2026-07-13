@@ -17,6 +17,7 @@ import (
 	C "github.com/sagernet/sing/common"
 
 	"github.com/Starktomy/XrayR/api"
+	"github.com/Starktomy/XrayR/common/version"
 )
 
 // APIClient create an api client to the panel.
@@ -60,7 +61,7 @@ func (c *APIClient) setETag(resource, value string) {
 func New(apiConfig *api.Config) *APIClient {
 
 	client := api.CreateRestyClient(apiConfig)
-	client.SetHeader("User-Agent", "XrayR/0.9.6")
+	client.SetHeader("User-Agent", "XrayR/"+version.Version)
 	client.OnError(func(req *resty.Request, err error) {
 		var v *resty.ResponseError
 		if errors.As(err, &v) {

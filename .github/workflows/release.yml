@@ -135,12 +135,12 @@ jobs:
       - name: Build XrayR
         run: |
           mkdir -p build_assets
-          go build -v -o build_assets/XrayR -trimpath -ldflags "-s -w -buildid= -X github.com/Starktomy/XrayR/cmd.version=${{ github.ref_name }}"
+          go build -v -o build_assets/XrayR -trimpath -ldflags "-s -w -buildid= -X github.com/Starktomy/XrayR/common/version.Version=${{ github.ref_name }}"
 
       - name: Build Mips softfloat XrayR
         if: matrix.goarch == 'mips' || matrix.goarch == 'mipsle'
         run: |
-          GOMIPS=softfloat go build -v -o build_assets/XrayR_softfloat -trimpath -ldflags "-s -w -buildid= -X github.com/Starktomy/XrayR/cmd.version=${{ github.ref_name }}"
+          GOMIPS=softfloat go build -v -o build_assets/XrayR_softfloat -trimpath -ldflags "-s -w -buildid= -X github.com/Starktomy/XrayR/common/version.Version=${{ github.ref_name }}"
       - name: Rename Windows XrayR
         if: matrix.goos == 'windows'
         run: |
@@ -181,12 +181,6 @@ jobs:
           touch -mt $(date +%Y01010000) *
           zip -9vr ../XrayR-$ASSET_NAME.zip .
           popd || exit 1
-          FILE=./XrayR-$ASSET_NAME.zip
-          DGST=$FILE.dgst
-          for METHOD in {"md5","sha1","sha256","sha512"}
-          do
-            openssl dgst -$METHOD $FILE | sed 's/([^)]*)//g' >>$DGST
-          done
       - name: Change the name
         run: |
           mv build_assets XrayR-$ASSET_NAME
@@ -198,9 +192,9 @@ jobs:
             ./XrayR-${{ steps.get_filename.outputs.ASSET_NAME }}/*
       - name: Upload binaries to release
         uses: svenstaro/upload-release-action@v2
-        if: github.event_name == 'release'
+        if: startsWith(github.ref, 'refs/tags/')
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
-          file: ./XrayR-${{ steps.get_filename.outputs.ASSET_NAME }}.zip*
+          file: ./XrayR-${{ steps.get_filename.outputs.ASSET_NAME }}.zip
           tag: ${{ github.ref }}
           file_glob: true

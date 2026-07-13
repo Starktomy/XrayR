@@ -1,8 +1,8 @@
 name: Publish Docker image
 on:
-  release:
-    types:
-      - published
+  push:
+    tags:
+      - "v*"
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: starktomy/xrayr
@@ -47,6 +47,7 @@ jobs:
           context: .
           platforms: ${{ matrix.platform }}
           labels: ${{ steps.meta.outputs.labels }}
+          build-args: VERSION=${{ github.ref_name }}
           outputs: type=image,name=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=true
       - name: Export digest
         run: |
