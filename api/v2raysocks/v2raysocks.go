@@ -1,11 +1,9 @@
 package v2raysocks
 
 import (
-	"bufio"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
 	"regexp"
 	"strconv"
 	"strings"
@@ -86,7 +84,7 @@ func New(apiConfig *api.Config) *APIClient {
 		"token":   apiConfig.Key,
 	})
 	// Read local rule list
-	localRuleList := readLocalRuleList(apiConfig.RuleListPath)
+	localRuleList := api.ReadLocalRuleList(apiConfig.RuleListPath)
 	apiClient := &APIClient{
 		client:        client,
 		NodeID:        apiConfig.NodeID,
@@ -103,47 +101,10 @@ func New(apiConfig *api.Config) *APIClient {
 	return apiClient
 }
 
-// readLocalRuleList reads the local rule list file
-func readLocalRuleList(path string) (LocalRuleList []api.DetectRule) {
-
-	LocalRuleList = make([]api.DetectRule, 0)
-	if path != "" {
-		// open the file
-		file, err := os.Open(path)
-
-		// handle errors while opening
-		if err != nil {
-			log.Printf("Error when opening file: %s", err)
-			return LocalRuleList
-		}
-		defer file.Close()
-
-		fileScanner := bufio.NewScanner(file)
-
-		// read line by line
-		for fileScanner.Scan() {
-			LocalRuleList = append(LocalRuleList, api.DetectRule{
-				ID:      -1,
-				Pattern: regexp.MustCompile(fileScanner.Text()),
-			})
-		}
-		// handle first encountered error while reading
-		if err := fileScanner.Err(); err != nil {
-			log.Errorf("Error while reading rule list %s: %s", path, err)
-			return
-		}
-
-		file.Close()
-	}
-
-	return LocalRuleList
-}
-
 // Describe return a description of the client
 func (c *APIClient) Describe() api.ClientInfo {
 	return api.ClientInfo{APIHost: c.APIHost, NodeID: c.NodeID, NodeType: c.NodeType}
 }
-
 
 func (c *APIClient) assembleURL(path string) string {
 	return api.AssembleURLFunc(c.APIHost, path)

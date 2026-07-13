@@ -1,11 +1,9 @@
 package sspanel
 
 import (
-	"bufio"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
 	"reflect"
 	"regexp"
 	"strconv"
@@ -90,7 +88,7 @@ func New(apiConfig *api.Config) *APIClient {
 	// Add support for muKey
 	client.SetQueryParam("muKey", apiConfig.Key)
 	// Read local rule list
-	localRuleList := readLocalRuleList(apiConfig.RuleListPath)
+	localRuleList := api.ReadLocalRuleList(apiConfig.RuleListPath)
 
 	return &APIClient{
 		client:              client,
@@ -109,49 +107,10 @@ func New(apiConfig *api.Config) *APIClient {
 	}
 }
 
-// readLocalRuleList reads the local rule list file
-func readLocalRuleList(path string) (LocalRuleList []api.DetectRule) {
-	LocalRuleList = make([]api.DetectRule, 0)
-	if path != "" {
-		// open the file
-		file, err := os.Open(path)
-
-		defer func(file *os.File) {
-			err := file.Close()
-			if err != nil {
-				log.Printf("Error when closing file: %s", err)
-			}
-		}(file)
-		// handle errors while opening
-		if err != nil {
-			log.Printf("Error when opening file: %s", err)
-			return LocalRuleList
-		}
-
-		fileScanner := bufio.NewScanner(file)
-
-		// read line by line
-		for fileScanner.Scan() {
-			LocalRuleList = append(LocalRuleList, api.DetectRule{
-				ID:      -1,
-				Pattern: regexp.MustCompile(fileScanner.Text()),
-			})
-		}
-		// handle first encountered error while reading
-		if err := fileScanner.Err(); err != nil {
-			log.Errorf("Error while reading rule list %s: %s", path, err)
-			return
-		}
-	}
-
-	return LocalRuleList
-}
-
 // Describe return a description of the client
 func (c *APIClient) Describe() api.ClientInfo {
 	return api.ClientInfo{APIHost: c.APIHost, NodeID: c.NodeID, NodeType: c.NodeType}
 }
-
 
 func (c *APIClient) assembleURL(path string) string {
 	return c.APIHost + path

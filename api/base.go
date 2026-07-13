@@ -3,7 +3,10 @@
 package api
 
 import (
+	"bufio"
 	"fmt"
+	"os"
+	"regexp"
 
 	"github.com/go-resty/resty/v2"
 )
@@ -49,4 +52,39 @@ func CheckResponse(res *resty.Response, path string, err error) error {
 		return fmt.Errorf("request %s failed: %s", path, string(res.Body()))
 	}
 	return nil
+}
+
+// ReadLocalRuleList reads the local rule list file
+func ReadLocalRuleList(path string) (LocalRuleList []DetectRule) {
+	LocalRuleList = make([]DetectRule, 0)
+	if path != "" {
+		// open the file
+		file, err := os.Open(path)
+		defer func() {
+			if file != nil {
+				_ = file.Close()
+			}
+		}()
+		// handle errors while opening
+		if err != nil {
+			fmt.Printf("Error when opening file: %s\n", err)
+			return LocalRuleList
+		}
+
+		fileScanner := bufio.NewScanner(file)
+
+		// read line by line
+		for fileScanner.Scan() {
+			LocalRuleList = append(LocalRuleList, DetectRule{
+				ID:      -1,
+				Pattern: regexp.MustCompile(fileScanner.Text()),
+			})
+		}
+		// handle first encountered error while reading
+		if err := fileScanner.Err(); err != nil {
+			fmt.Printf("Error while reading rule list %s: %s\n", path, err)
+			return
+		}
+	}
+	return LocalRuleList
 }
