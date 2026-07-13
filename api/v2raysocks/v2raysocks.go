@@ -501,3 +501,7 @@ func (c *APIClient) ParseV2rayNodeResponse(nodeInfoResponse *simplejson.Json) (*
 	}
 	return nodeInfo, nil
 }
+
+func init() {
+	api.RegisterPanel("V2RaySocks", func(c *api.Config) api.API { return New(c) })
+}

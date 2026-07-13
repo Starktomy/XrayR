@@ -71,4 +71,11 @@ import (
 
 	// Commands
 	_ "github.com/xtls/xray-core/main/commands/all"
+
+	// XrayR Panel Adapters
+	_ "github.com/Starktomy/XrayR/api/gov2panel"
+	_ "github.com/Starktomy/XrayR/api/newV2board"
+	_ "github.com/Starktomy/XrayR/api/proxypanel"
+	_ "github.com/Starktomy/XrayR/api/sspanel"
+	_ "github.com/Starktomy/XrayR/api/v2raysocks"
 )

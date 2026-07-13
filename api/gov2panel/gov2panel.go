@@ -289,3 +289,7 @@ func (c *APIClient) sendRequest(headerM map[string]string, method string, url st
 
 	return
 }
+
+func init() {
+	api.RegisterPanel("GoV2Panel", func(c *api.Config) api.API { return New(c) })
+}

@@ -543,3 +543,7 @@ func (c *APIClient) ParseSSUserListResponse(userInfoResponse *json.RawMessage) (
 
 	return &userList, nil
 }
+
+func init() {
+	api.RegisterPanel("Proxypanel", func(c *api.Config) api.API { return New(c) })
+}

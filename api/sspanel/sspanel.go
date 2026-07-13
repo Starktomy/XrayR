@@ -823,3 +823,7 @@ func compareVersion(version1, version2 string) int {
 	}
 	return 0
 }
+
+func init() {
+	api.RegisterPanel("SSpanel", func(c *api.Config) api.API { return New(c) })
+}

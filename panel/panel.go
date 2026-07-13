@@ -18,11 +18,6 @@ import (
 	"github.com/xtls/xray-core/infra/conf"
 
 	"github.com/Starktomy/XrayR/api"
-	"github.com/Starktomy/XrayR/api/gov2panel"
-	"github.com/Starktomy/XrayR/api/newV2board"
-	"github.com/Starktomy/XrayR/api/proxypanel"
-	"github.com/Starktomy/XrayR/api/sspanel"
-	"github.com/Starktomy/XrayR/api/v2raysocks"
 	"github.com/Starktomy/XrayR/app/mydispatcher"
 	_ "github.com/Starktomy/XrayR/cmd/distro/all"
 	"github.com/Starktomy/XrayR/service"
@@ -181,20 +176,9 @@ func (p *Panel) Start() error {
 
 	// Load Nodes config
 	for _, nodeConfig := range p.panelConfig.NodesConfig {
-		var apiClient api.API
-		switch nodeConfig.PanelType {
-		case "SSpanel":
-			apiClient = sspanel.New(nodeConfig.ApiConfig)
-		case "NewV2board", "V2board":
-			apiClient = newV2board.New(nodeConfig.ApiConfig)
-		case "Proxypanel":
-			apiClient = proxypanel.New(nodeConfig.ApiConfig)
-		case "V2RaySocks":
-			apiClient = v2raysocks.New(nodeConfig.ApiConfig)
-		case "GoV2Panel":
-			apiClient = gov2panel.New(nodeConfig.ApiConfig)
-		default:
-			return fmt.Errorf("unsupported panel type: %s", nodeConfig.PanelType)
+		apiClient, err := api.CreatePanel(nodeConfig.PanelType, nodeConfig.ApiConfig)
+		if err != nil {
+			return err
 		}
 		var controllerService service.Service
 		// Register controller service

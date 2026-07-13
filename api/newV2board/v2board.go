@@ -427,3 +427,8 @@ func (s *serverConfig) parseDNSConfig() (nameServerList []*conf.NameServerConfig
 
 	return
 }
+
+func init() {
+	api.RegisterPanel("NewV2board", func(c *api.Config) api.API { return New(c) })
+	api.RegisterPanel("V2board", func(c *api.Config) api.API { return New(c) })
+}
