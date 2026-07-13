@@ -291,5 +291,3 @@ require (
 	gvisor.dev/gvisor v0.0.0-20260109181451-4be7c433dae2 // indirect
 	lukechampine.com/blake3 v1.4.1 // indirect
 )
-
-replace gvisor.dev/gvisor => ./third_party/gvisor

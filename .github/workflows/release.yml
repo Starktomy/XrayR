@@ -111,14 +111,20 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          # Pin to 1.26 so the gvisor runtime_constants_go126.go
-          # and runtime_spinning_go126_amd64.s files are
-          # compiled exclusively; with 1.25.x the go1.26
-          # build tag is unknown and both .go125 and .go126
-          # source files are included, which redeclares the
-          # WaitReason* constants and the addrOfSpinning
-          # asm symbol.
-          go-version: '1.26.5'
+          # Pin to 1.25.6 to match the toolchain declared in
+          # go.mod. The gvisor v0.0.0-20260109181451 release
+          # uses go:build go1.25 for the go1.25 source files
+          # and go:build go1.26 for the go1.26 ones, so the
+          # 1.25 toolchain compiles only the go1.25 files and
+          # the go1.26 ones are skipped. (The go1.26 build
+          # constraint is recognised by 1.25.x; it is simply
+          # not satisfied, which is the desired behaviour.)
+          # With go 1.26.x the go1.25 build tag is satisfied
+          # and BOTH files are compiled, redeclaring the
+          # WaitReason* constants — so do not switch to 1.26
+          # without also upgrading gvisor past
+          # v0.0.0-20260126202813.
+          go-version: '1.25.6'
 
       - name: Get project dependencies
         run: go mod download
